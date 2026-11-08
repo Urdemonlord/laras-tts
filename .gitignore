@@ -25,3 +25,6 @@ __pycache__/
 /hf
 *.onnx
 *.safetensors
+
+# Data runtime (model, cache, referensi suara)
+/data
