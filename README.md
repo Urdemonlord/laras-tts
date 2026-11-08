@@ -1,8 +1,14 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/laras-banner-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/laras-banner-light.png">
+    <img src="assets/laras-banner-dark.png" alt="Laras — Open-source Voice Synthesis Engine" width="760">
+  </picture>
+</p>
+
 # Laras
 
-**Open-source voice synthesis engine.**
-
-Give your words a voice.
+**Open-source voice synthesis engine.** Give your words a voice.
 
 CPU-first · Self-hosted · Voice cloning · Indonesian-first
 
