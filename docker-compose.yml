@@ -1,12 +1,13 @@
 services:
-  tts-gateway:
+  laras:
     build: .
-    image: tts-gateway:latest
+    image: laras-tts:latest
     ports:
       - "8080:8080"
     volumes:
       - ./data:/data          # isi: ref/suara.wav (10-15 detik)
     environment:
+      LARAS_LANG: "id"
       TAKES: "3"
       USE_ASR: "1"
       POCKET_CFG: "hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@17257664e384561c957b02ac92edd1a24807f0e5"

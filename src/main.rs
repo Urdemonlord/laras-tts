@@ -1,167 +1,32 @@
-//! tts-gateway — HTTP gateway TTS Bahasa Indonesia.
+//! laras — engine TTS Bahasa Indonesia, CPU-first, dengan kloning suara.
 //!
-//! Tanggung jawab (semua di Rust, tanpa Python):
-//!   * normalisasi angka: "Rp 12.500" -> "dua belas ribu lima ratus rupiah"
+//! Tanggung jawab inti (semua di Rust):
+//!   * normalisasi teks lewat profil bahasa (`src/lang/`)
 //!   * cache hasil berdasarkan hash teks + voice + takes
 //!   * serialisasi akses ke worker (1 proses Python, model tetap di RAM)
 //!
-//! Worker (Python, `worker.py`) melakukan: chunking per kalimat, generasi,
-//! best-of-N dipilih lewat WER Whisper, tulis WAV 24 kHz mono.
+//! Worker (Python, `worker.py`) melakukan chunking per kalimat, generasi,
+//! best-of-N dipilih lewat WER Whisper, lalu menulis WAV 24 kHz mono.
+//!
+//! Engine inferensi masih Python hari ini. Itu batasan yang disadari, bukan
+//! tujuan: kontrak HTTP di sini stabil supaya engine bisa ditukar ke ONNX
+//! Runtime tanpa mengubah klien.
+
+mod lang;
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use axum::extract::State;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use regex::Regex;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-
-// ---------------------------------------------------------------- normalizer
-
-const SATUAN: [&str; 12] = [
-    "", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh",
-    "sebelas",
-];
-
-// `is_multiple_of()` baru stabil di Rust 1.87; sengaja pakai `%` agar MSRV tetap 1.75.
-#[allow(clippy::manual_is_multiple_of)]
-fn ratus(n: u64) -> String {
-    if n < 12 {
-        return SATUAN[n as usize].to_string();
-    }
-    if n < 20 {
-        return format!("{} belas", ratus(n - 10));
-    }
-    if n < 100 {
-        let s = format!("{} puluh", ratus(n / 10));
-        return if n % 10 != 0 {
-            format!("{} {}", s, ratus(n % 10))
-        } else {
-            s
-        };
-    }
-    let s = if n < 200 {
-        "seratus".to_string()
-    } else {
-        format!("{} ratus", ratus(n / 100))
-    };
-    if n % 100 != 0 {
-        format!("{} {}", s, ratus(n % 100))
-    } else {
-        s
-    }
-}
-
-fn terbilang(n: u64) -> String {
-    if n == 0 {
-        return "nol".to_string();
-    }
-    let mut n = n;
-    let mut parts: Vec<String> = Vec::new();
-    let scales: [(u64, &str); 5] = [
-        (1_000_000_000_000, "triliun"),
-        (1_000_000_000, "miliar"),
-        (1_000_000, "juta"),
-        (1_000, "ribu"),
-        (1, ""),
-    ];
-    for (nilai, nama) in scales {
-        if n >= nilai {
-            let q = n / nilai;
-            n %= nilai;
-            if nilai == 1000 && q == 1 {
-                parts.push("seribu".to_string());
-            } else if nama.is_empty() {
-                parts.push(ratus(q));
-            } else {
-                parts.push(format!("{} {}", ratus(q), nama));
-            }
-        }
-    }
-    parts.join(" ")
-}
-
-fn re_rp() -> &'static Regex {
-    static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"\bRp\.?\s*([0-9](?:[0-9.,]*[0-9])?)").unwrap())
-}
-
-fn re_persen() -> &'static Regex {
-    static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"([0-9](?:[0-9.,]*[0-9])?)\s*%").unwrap())
-}
-
-fn re_angka() -> &'static Regex {
-    static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"[0-9](?:[0-9.,]*[0-9])?").unwrap())
-}
-
-fn re_ribuan() -> &'static Regex {
-    static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"^[0-9]{1,3}(\.[0-9]{3})+$").unwrap())
-}
-
-fn re_spasi() -> &'static Regex {
-    static R: OnceLock<Regex> = OnceLock::new();
-    R.get_or_init(|| Regex::new(r"\s+").unwrap())
-}
-
-/// "12.500" -> "dua belas ribu lima ratus", "32,5" -> "tiga puluh dua koma lima"
-fn angka(tok: &str) -> String {
-    let tok = tok.trim().trim_end_matches('.');
-    if let Some((bulat, pecah)) = tok.split_once(',') {
-        let b: String = bulat.replace('.', "");
-        let b = if b.is_empty() { "0".to_string() } else { b };
-        let mut out = format!("{} koma", terbilang(b.parse().unwrap_or(0)));
-        for c in pecah.chars().filter(|c| c.is_ascii_digit()) {
-            out.push(' ');
-            out.push_str(&terbilang(c.to_digit(10).unwrap() as u64));
-        }
-        return out;
-    }
-    let clean = if re_ribuan().is_match(tok) {
-        tok.replace('.', "")
-    } else {
-        tok.to_string()
-    };
-    if clean.parse::<u64>().is_err() {
-        // bukan bilangan utuh (mis. "09.30", "4.2.1") -> baca digit per digit
-        let mut out: Vec<String> = Vec::new();
-        for c in tok.chars() {
-            match c {
-                '0'..='9' => out.push(terbilang(c.to_digit(10).unwrap() as u64)),
-                '.' => out.push("titik".to_string()),
-                ',' => out.push("koma".to_string()),
-                _ => {}
-            }
-        }
-        return out.join(" ");
-    }
-    terbilang(clean.parse().unwrap_or(0))
-}
-
-/// Normalisasi teks sebelum masuk model: semua digit jadi kata.
-pub fn normalize(text: &str) -> String {
-    let s = re_rp()
-        .replace_all(text, |c: &regex::Captures| {
-            format!("{} rupiah", angka(&c[1]))
-        })
-        .to_string();
-    let s = re_persen()
-        .replace_all(&s, |c: &regex::Captures| format!("{} persen", angka(&c[1])))
-        .to_string();
-    let s = re_angka()
-        .replace_all(&s, |c: &regex::Captures| angka(&c[0]))
-        .to_string();
-    re_spasi().replace_all(s.trim(), " ").to_string()
-}
 
 // ------------------------------------------------------------------- worker
 
@@ -176,6 +41,7 @@ struct AppState {
     cache_dir: PathBuf,
     ref_wav: String,
     takes: u32,
+    lang: &'static dyn lang::Lang,
 }
 
 const DEFAULT_POCKET_CFG: &str = "hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@17257664e384561c957b02ac92edd1a24807f0e5";
@@ -215,17 +81,27 @@ struct TtsReq {
 }
 
 async fn normalize_handler(
+    State(st): State<Arc<AppState>>,
     axum::extract::Query(q): axum::extract::Query<HashMap<String, String>>,
 ) -> Response {
     let text = q.get("text").cloned().unwrap_or_default();
-    Json(serde_json::json!({"input": text, "normalized": normalize(&text)})).into_response()
+    Json(serde_json::json!({
+        "input": text,
+        "normalized": st.lang.normalize(&text),
+        "prepared": st.lang.prepare(&text),
+        "lang": st.lang.code(),
+    }))
+    .into_response()
 }
 
 async fn health(State(st): State<Arc<AppState>>) -> Response {
     let w = st.worker.lock().unwrap();
     Json(serde_json::json!({
         "ok": true,
+        "engine": "laras",
+        "version": env!("CARGO_PKG_VERSION"),
         "pid": w._child.id(),
+        "lang": st.lang.code(),
         "default_voice": st.ref_wav,
         "takes": st.takes,
         "cache_dir": st.cache_dir.to_string_lossy(),
@@ -234,7 +110,7 @@ async fn health(State(st): State<Arc<AppState>>) -> Response {
 }
 
 async fn tts(State(st): State<Arc<AppState>>, Json(req): Json<TtsReq>) -> Response {
-    let text = normalize(&req.text);
+    let text = st.lang.prepare(&req.text);
     if text.is_empty() {
         return (StatusCode::BAD_REQUEST, "teks kosong").into_response();
     }
@@ -313,6 +189,15 @@ async fn tts(State(st): State<Arc<AppState>>, Json(req): Json<TtsReq>) -> Respon
 
 #[tokio::main]
 async fn main() {
+    let lang_code = env_or("LARAS_LANG", "id");
+    let Some(bahasa) = lang::get(&lang_code) else {
+        eprintln!(
+            "bahasa \"{lang_code}\" belum didukung. Tersedia: {}",
+            lang::codes().join(", ")
+        );
+        std::process::exit(2);
+    };
+
     let port: u16 = env_or("PORT", "8080").parse().unwrap_or(8080);
     let cache_dir = PathBuf::from(env_or("CACHE_DIR", "data/cache"));
     std::fs::create_dir_all(&cache_dir).expect("cache dir");
@@ -356,6 +241,7 @@ async fn main() {
         cache_dir,
         ref_wav,
         takes,
+        lang: bahasa,
     });
 
     let app = Router::new()
@@ -367,7 +253,11 @@ async fn main() {
     let bind = env_or("BIND", "127.0.0.1");
     let addr = format!("{bind}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind");
-    eprintln!("tts-gateway listening on http://{addr}");
+    eprintln!(
+        "laras {} (bahasa {}) listening on http://{addr}",
+        env!("CARGO_PKG_VERSION"),
+        bahasa.code()
+    );
     axum::serve(listener, app).await.unwrap();
 }
 
@@ -376,38 +266,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn terbilang_dasar() {
-        assert_eq!(terbilang(0), "nol");
-        assert_eq!(terbilang(11), "sebelas");
-        assert_eq!(terbilang(15), "lima belas");
-        assert_eq!(terbilang(100), "seratus");
-        assert_eq!(terbilang(1000), "seribu");
-        assert_eq!(terbilang(12500), "dua belas ribu lima ratus");
-        assert_eq!(terbilang(2026), "dua ribu dua puluh enam");
-        assert_eq!(terbilang(1_250_000), "satu juta dua ratus lima puluh ribu");
-    }
-
-    #[test]
-    fn normalisasi_kalimat() {
-        assert_eq!(
-            normalize("Harga saham naik 15 persen menjadi Rp 12.500 per lembar pada 2026."),
-            "Harga saham naik lima belas persen menjadi dua belas ribu lima ratus rupiah per lembar pada dua ribu dua puluh enam."
-        );
-        assert_eq!(
-            normalize("Suhu 32,5 derajat"),
-            "Suhu tiga puluh dua koma lima derajat"
-        );
-        assert_eq!(normalize("Biaya Rp 5.000.000"), "Biaya lima juta rupiah");
-        assert_eq!(
-            normalize("tahun 1998"),
-            "tahun seribu sembilan ratus sembilan puluh delapan"
-        );
-        assert_eq!(normalize("tanpa angka"), "tanpa angka");
-        assert_eq!(normalize("   spasi   berlebih  "), "spasi berlebih");
-        assert_eq!(
-            normalize("pukul 09.30"),
-            "pukul nol sembilan titik tiga nol"
-        );
-        assert_eq!(normalize("versi 4.2.1"), "versi empat titik dua titik satu");
+    fn cache_key_stabil_dan_pendek() {
+        let a = hash_key("halo|ref.wav|3");
+        assert_eq!(a, hash_key("halo|ref.wav|3"));
+        assert_ne!(a, hash_key("halo|ref.wav|1"));
+        assert_eq!(a.len(), 24);
     }
 }

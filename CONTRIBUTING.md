@@ -33,6 +33,14 @@ CI menjalankan hal yang sama. PR yang membuat CI merah tidak di-merge.
 
 ## Menambah dukungan bahasa
 
-Normalizer angka adalah bagian yang paling bahasa-spesifik. Untuk bahasa baru:
-salin `normalize()` + `terbilang()` ke modul terpisah, tambah test, lalu pilih
-lewat env `LANG_ID` (belum ada — kontribusi diterima).
+Semua yang spesifik-bahasa ada di `src/lang/`, di belakang trait `Lang`.
+Untuk bahasa baru:
+
+1. Buat `src/lang/xx.rs`, implementasikan `Lang` (minimal `code()` dan
+   `normalize()`; `phoneme_fix()` opsional).
+2. Daftarkan di `src/lang/mod.rs` (`static ALL`).
+3. Tambah test: angka dasar, ribuan, desimal, mata uang, persen, dan format
+   yang mudah salah (jam, versi, tanggal).
+4. Pilih saat runtime dengan `LARAS_LANG=xx`.
+
+Model perlu mendukung bahasa tersebut; normalizer hanya menyiapkan teks.

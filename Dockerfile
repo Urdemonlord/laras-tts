@@ -23,7 +23,7 @@ COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
 COPY worker.py norm_id.py ./
-COPY --from=build /src/target/release/tts-gateway /usr/local/bin/tts-gateway
+COPY --from=build /src/target/release/laras /usr/local/bin/laras
 
 ENV BIND=0.0.0.0 \
     PORT=8080 \
@@ -33,6 +33,7 @@ ENV BIND=0.0.0.0 \
     CACHE_DIR=/data/cache \
     WORKER_OUT=/data/out \
     HF_HOME=/data/hf \
+    LARAS_LANG=id \
     TAKES=3 \
     USE_ASR=1
 
@@ -42,4 +43,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3).status==200 else 1)"
 
-CMD ["tts-gateway"]
+CMD ["laras"]

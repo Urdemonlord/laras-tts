@@ -1,12 +1,13 @@
 [package]
-name = "tts-gateway"
+name = "laras"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
-description = "HTTP gateway TTS Bahasa Indonesia: normalizer angka + chunking + worker Pocket TTS"
+description = "Laras — engine TTS Bahasa Indonesia yang CPU-first, self-hosted, dengan kloning suara"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/Urdemonlord/tts-gateway"
-keywords = ["tts", "text-to-speech", "indonesian", "voice-cloning", "axum"]
+repository = "https://github.com/Urdemonlord/laras-tts"
+homepage = "https://github.com/Urdemonlord/laras-tts"
+keywords = ["tts", "text-to-speech", "indonesian", "voice-cloning", "cpu"]
 categories = ["web-programming::http-server", "multimedia::audio"]
 
 [dependencies]

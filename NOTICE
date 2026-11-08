@@ -1,28 +1,137 @@
-tts-gateway
+Laras — open-source voice synthesis engine
 Copyright 2026 Urdemonlord
 
-Kode proyek ini dilisensikan ganda: MIT OR Apache-2.0 (pilih salah satu).
+Lisensi proyek ini berlapis. Kode Laras, kode dependency, bobot base model,
+bobot fine-tune, dan dataset/suara referensi punya lisensi yang BERBEDA.
+Jangan menyimpulkan lisensi seluruh sistem dari satu lapisan saja.
 
-Proyek ini TIDAK menyertakan bobot model. Bobot diunduh saat runtime dan
-tunduk pada lisensi masing-masing:
 
-  * pocket-tts (kyutai-labs/pocket-tts) ........ MIT
-  * pocket-tts-indonesian (anak10thn) .......... CC-BY-4.0
-        Dataset: LEMAS (502 jam Bahasa Indonesia)
-        WAJIB atribusi: cantumkan "Pocket TTS Indonesian oleh anak10thn,
-        CC-BY-4.0" pada produk/dokumentasi yang memakainya, beserta tautan
-        https://huggingface.co/anak10thn/pocket-tts-indonesian
-  * Whisper small (openai/whisper-small) ....... MIT
-  * faster-whisper (SYSTRAN) ................... MIT
-  * resemblyzer (resemble-ai) .................. Apache-2.0
-  * librosa (librosa/librosa) .................. ISC
-  * python-soundfile ........................... BSD-3-Clause
-  * NumPy ...................................... BSD-3-Clause
-  * PyTorch .................................... BSD-3-Clause
+==========================================================================
+1. LISENSI SOURCE CODE PROYEK INI
+==========================================================================
+
+MIT OR Apache-2.0 — pilih salah satu.
+
+  * LICENSE-MIT
+  * LICENSE-APACHE
+
+Berlaku untuk: src/**, worker.py, norm_id.py, Dockerfile, Makefile,
+docker-compose.yml, examples/**, dokumentasi.
+
+Lisensi ini TIDAK berlaku untuk bobot model apa pun.
+
+
+==========================================================================
+2. LISENSI SOURCE CODE DEPENDENCY
+==========================================================================
 
 Dependensi Rust (semua MIT atau MIT OR Apache-2.0):
-  axum, tokio, serde, serde_json, sha2, hex, regex
 
-Catatan: lisensi MIT/Apache-2.0 pada kode ini TIDAK mengubah lisensi bobot
-model. Jika kamu mendistribusikan produk yang memakai bobot CC-BY-4.0, kamu
-tetap wajib memenuhi atribusi CC-BY-4.0.
+  axum, tokio, serde, serde_json, sha2, hex, regex
+  hyper, tower, http, bytes, futures, dan transitif lainnya
+  (rincian versi persis ada di Cargo.lock)
+
+Dependensi Python yang dipakai worker:
+
+  pocket-tts (Kyutai) ................ MIT
+  faster-whisper (SYSTRAN) ........... MIT
+  ctranslate2 ........................ MIT
+  resemblyzer (Resemble AI) .......... Apache-2.0
+  librosa (librosa/librosa) .......... ISC
+  python-soundfile ................... BSD-3-Clause
+  NumPy .............................. BSD-3-Clause
+  PyTorch ............................ BSD-3-Clause
+
+Tidak ada dependency berlisensi GPL/AGPL di jalur runtime. Ini keputusan
+sadar: espeak-ng (GPL-3.0) yang umum dipakai proyek TTS lain sengaja tidak
+dipakai, karena normalizer angka ditulis sendiri di Rust.
+
+
+==========================================================================
+3. LISENSI BASE MODEL
+==========================================================================
+
+kyutai/pocket-tts
+
+  * Source code (GitHub kyutai-labs/pocket-tts) .... MIT
+  * Bobot model (Hugging Face kyutai/pocket-tts) ... CC-BY-4.0
+  * Akses .......................................... gated ("auto")
+
+Kode dan bobot punya lisensi berbeda. Yang menentukan untuk distribusi
+produk adalah lisensi BOBOT.
+
+Kewajiban CC-BY-4.0 pada bobot:
+
+  (a) atribusi ke Kyutai;
+  (b) sertakan salinan/tautan lisensi CC-BY-4.0;
+  (c) tandai bila ada perubahan;
+  (d) jangan menambah pembatasan hukum di atas lisensi.
+
+Tautan:
+  https://github.com/kyutai-labs/pocket-tts
+  https://huggingface.co/kyutai/pocket-tts
+  https://creativecommons.org/licenses/by/4.0/
+
+
+==========================================================================
+4. LISENSI FINE-TUNED MODEL
+==========================================================================
+
+anak10thn/pocket-tts-indonesian
+
+  * Bobot .......................................... CC-BY-4.0
+  * Asal ........................................... fine-tune dari base model Kyutai
+  * Dipakai Laras lewat pin commit:
+    17257664e384561c957b02ac92edd1a24807f0e5 (indonesian_6l.yaml)
+
+Perubahan (CC-BY-4.0 bagian 3(a)(1) mewajibkan penandaan perubahan):
+  Model ini merupakan modifikasi/fine-tune atas bobot Kyutai Pocket TTS untuk
+  Bahasa Indonesia. Perubahan tersebut dilakukan oleh pemilik bobot
+  (anak10thn), bukan oleh proyek Laras. Laras hanya memuat dan menjalankan
+  bobot tersebut tanpa mengubah parameternya.
+
+Atribusi yang wajib dicantumkan bila kamu memakai bobot ini di produk:
+
+  "Pocket TTS Indonesian oleh anak10thn, CC-BY-4.0"
+  https://huggingface.co/anak10thn/pocket-tts-indonesian
+
+Catatan penting: lisensi MIT/Apache-2.0 pada kode Laras TIDAK mengubah
+lisensi bobot. Kamu tidak boleh menyatakan bahwa sistem hasil gabungan
+"berlisensi MIT" tanpa menyebut kewajiban CC-BY-4.0 di atas.
+
+
+==========================================================================
+5. LISENSI DATASET DAN SUARA REFERENSI
+==========================================================================
+
+Dataset pelatihan bobot Indonesia: LEMAS (Bahasa Indonesia), sebagaimana
+dinyatakan oleh pemilik bobot. Lisensi dataset tidak diwariskan otomatis
+menjadi lisensi bobot, dan proyek ini TIDAK memverifikasi ulang lisensi
+dataset tersebut. Kalau kamu butuh kepastian hukum untuk produk komersial,
+verifikasi langsung ke pemilik bobot dan pemilik dataset.
+
+Berkas suara referensi (voice reference):
+  * Repo ini TIDAK menyertakan berkas suara siapa pun.
+  * Semua berkas di ref/ dan data/ adalah milik pengguna yang menyediakannya.
+  * Pengguna bertanggung jawab memastikan ia berhak memakai suara tersebut
+    (lihat ETHICS.md).
+
+
+==========================================================================
+RINGKASAN PRAKTIS UNTUK DISTRIBUSI KOMERSIAL
+==========================================================================
+
+Boleh:
+  - pakai Laras secara komersial (MIT/Apache-2.0)
+  - pakai bobot CC-BY-4.0 secara komersial
+  - modifikasi kode dan bobot
+
+Wajib:
+  - sertakan lisensi kode (MIT atau Apache-2.0)
+  - cantumkan atribusi Kyutai + anak10thn + tautan CC-BY-4.0
+  - tandai perubahan bila kamu mengubah bobot
+  - pastikan hak pakai atas suara referensi
+
+Dilarang:
+  - mengklaim seluruh sistem berlisensi MIT tanpa menyebut CC-BY-4.0
+  - menambah pembatasan yang mempersempit hak pengguna CC-BY-4.0

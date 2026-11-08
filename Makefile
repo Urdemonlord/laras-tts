@@ -1,4 +1,4 @@
-BIN := target/release/tts-gateway
+BIN := target/release/laras
 
 .PHONY: all build test lint fmt run clean docker
 

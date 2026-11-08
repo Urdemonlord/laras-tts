@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Worker TTS untuk tts-gateway.
+"""Worker TTS untuk laras.
 
 Protokol: satu JSON per baris di stdin, satu JSON per baris di stdout.
   -> {"id": "...", "text": "sudah dinormalisasi", "ref": "path.wav", "takes": 3}
