@@ -1,0 +1,28 @@
+tts-gateway
+Copyright 2026 Urdemonlord
+
+Kode proyek ini dilisensikan ganda: MIT OR Apache-2.0 (pilih salah satu).
+
+Proyek ini TIDAK menyertakan bobot model. Bobot diunduh saat runtime dan
+tunduk pada lisensi masing-masing:
+
+  * pocket-tts (kyutai-labs/pocket-tts) ........ MIT
+  * pocket-tts-indonesian (anak10thn) .......... CC-BY-4.0
+        Dataset: LEMAS (502 jam Bahasa Indonesia)
+        WAJIB atribusi: cantumkan "Pocket TTS Indonesian oleh anak10thn,
+        CC-BY-4.0" pada produk/dokumentasi yang memakainya, beserta tautan
+        https://huggingface.co/anak10thn/pocket-tts-indonesian
+  * Whisper small (openai/whisper-small) ....... MIT
+  * faster-whisper (SYSTRAN) ................... MIT
+  * resemblyzer (resemble-ai) .................. Apache-2.0
+  * librosa (librosa/librosa) .................. ISC
+  * python-soundfile ........................... BSD-3-Clause
+  * NumPy ...................................... BSD-3-Clause
+  * PyTorch .................................... BSD-3-Clause
+
+Dependensi Rust (semua MIT atau MIT OR Apache-2.0):
+  axum, tokio, serde, serde_json, sha2, hex, regex
+
+Catatan: lisensi MIT/Apache-2.0 pada kode ini TIDAK mengubah lisensi bobot
+model. Jika kamu mendistribusikan produk yang memakai bobot CC-BY-4.0, kamu
+tetap wajib memenuhi atribusi CC-BY-4.0.

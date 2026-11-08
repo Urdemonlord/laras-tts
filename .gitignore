@@ -1,0 +1,27 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Runtime
+/out
+/cache
+/venv
+/.venv
+__pycache__/
+*.pyc
+.env
+
+# JANGAN commit berkas suara siapa pun (lihat ETHICS.md)
+/ref/*.wav
+/ref/*.mp3
+/ref/*.m4a
+/ref/*.ogg
+/ref/*.webm
+*.wav
+*.mp3
+!tests/fixtures/*.wav
+
+# Model
+/hf
+*.onnx
+*.safetensors

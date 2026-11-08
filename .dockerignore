@@ -1,0 +1,9 @@
+/target
+/out
+/cache
+/ref
+/venv
+.git
+**/__pycache__
+*.wav
+*.mp3
