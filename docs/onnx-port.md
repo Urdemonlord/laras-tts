@@ -238,6 +238,30 @@ Ambang 20 kata dipilih karena pengulangan di ujung baru muncul pada paragraf
 Respons membawa header `x-chunks` dan `x-takes` supaya pemanggil tahu jalur
 mana yang dipakai; `CHUNK=0` memaksa satu lintasan untuk semuanya.
 
+### Level: −28 LUFS terlalu pelan
+
+Model mengeluarkan audio dengan puncak −10,7 dBFS dan loudness terintegrasi
+−28 LUFS. Menormalkan puncak saja (gain sampai puncak −1 dBFS) menghasilkan
+−21 LUFS dan selisih level antar kalimat sekitar 1 dB, karena crest factor tiap
+kalimat berbeda. Jadi yang dinormalkan adalah loudness, bukan puncak.
+
+`src/level.rs` mengukur BS.1770 sendiri: filter K-weighting diturunkan dengan
+`K = tan(π f₀ / fs)` (f₀ 1681,97 Hz untuk shelf, 38,14 Hz untuk high-pass)
+sehingga angka 48 kHz milik spesifikasi keluar persis — diuji — dan filter yang
+sama valid di 24 kHz. Pengukuran blok 400 ms / hop 100 ms dengan dua gerbang,
+lalu gain, lalu limiter lookahead 5 ms, diulang sampai target tercapai.
+
+| Berkas | Mentah | Setelah normalisasi | Gain |
+|---|---|---|---|
+| kalimat pendek (1,68 s) | −28,3 LUFS / −8,3 dBFS | −18,1 LUFS / −1,5 dBFS | +10,8 dB |
+| kalimat sedang (2,08 s) | −28,9 LUFS / −11,2 dBFS | −18,1 LUFS / −1,5 dBFS | +11,3 dB |
+| paragraf 3 kalimat (8,62 s) | −28,7 LUFS / −10,3 dBFS | −18,2 LUFS / −1,5 dBFS | +10,7 dB |
+
+Pembatasan puncak paling besar 3,5 dB pada 2,6% sampel di kalimat terpendek
+(satu lonjakan konsonan), dan 1,4–1,9 dB pada berkas lain. Target `-16` (norma
+podcast) juga bisa, tapi butuh pembatasan sampai 5,5 dB di berkas yang sama,
+jadi bawaannya `-18`.
+
 ### Pemakaian
 
 ```bash

@@ -187,6 +187,8 @@ Waktu respons HTTP (4 vCPU, `takes=3`):
 | `CHUNK` | `1` | pecah teks per kalimat sebelum sintesis; `0` = satu lintasan |
 | `CHUNK_MIN_WORDS` | `20` | teks ≤ sekian kata tidak dipecah (tetap best-of-N + ASR) |
 | `CHUNK_TAKES` | `1` | take per kalimat saat teks dipecah |
+| `LOUDNESS` | `-18` | target loudness LUFS keluaran; `0` = jangan dinormalkan |
+| `PEAK_DB` | `-1.5` | batas puncak dBFS setelah normalisasi |
 | `MODELS_DIR` | `data/onnx` | direktori graf ONNX (backend native) |
 | `ASR_MODEL` | _(kosong)_ | path `ggml-*.bin`; kalau diisi, take dipilih dengan WER ASR |
 | `ASR_CTX` | `0` (penuh 1500) | jendela encoder whisper; 768 ±2,2× lebih cepat |
@@ -199,6 +201,27 @@ Waktu respons HTTP (4 vCPU, `takes=3`):
 | `EOS` | `-3.0` | ambang EOS model |
 | `REF_MAX_S` | `15` | batas potong referensi (detik) |
 | `HF_HOME` | `data/hf` | cache bobot model |
+
+## Level audio
+
+Keluaran mentah mesin ini sekitar **−28 LUFS** dengan puncak −10,7 dBFS: harus
+dikeraskan sendiri di pemutar. Gateway menormalkannya sendiri, tanpa ffmpeg:
+
+1. Loudness diukur dengan **ITU-R BS.1770** (K-weighting + blok 400 ms + gerbang
+   absolut −70 LUFS dan relatif −10 LU), dihitung di `src/level.rs`. Filter
+   diturunkan ulang dari parameter aslinya (`K = tan(π f₀ / fs)`) sehingga
+   berlaku di 24 kHz, bukan hanya 48 kHz; pada 48 kHz koefisiennya sama persis
+   dengan tabel spesifikasi (ada tesnya).
+2. Gain dinaikkan ke target `LOUDNESS`, lalu puncak dibatasi dengan limiter
+   lookahead 5 ms dan pelepasan 50 ms ke `PEAK_DB`.
+3. Karena pembatasan menurunkan loudness, langkah 2 diulang maksimal tiga kali
+   sampai selisih ke target < 0,3 dB.
+
+Hasil pada empat kalimat uji: **−18,0 sampai −18,2 LUFS**, puncak −1,5 dBFS,
+gain +9,8 sampai +11,3 dB. Tanpa normalisasi, selisih antar kalimat mencapai
+1 dB dan semuanya terlalu pelan.
+
+Untuk memeriksa satu berkas: `cargo run --release --bin lufs -- hasil.wav -18 -1.5`.
 
 ## Arsitektur
 

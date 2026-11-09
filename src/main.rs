@@ -194,6 +194,10 @@ struct AppState {
     chunk_takes: u32,
     /// Di bawah jumlah kata ini, teks tidak dipecah (CHUNK_MIN_WORDS).
     chunk_min_words: usize,
+    /// Target loudness LUFS; 0 = jangan dinormalkan (LOUDNESS).
+    loudness: f32,
+    /// Batas puncak dBFS setelah normalisasi (PEAK_DB).
+    peak_db: f32,
     lang: &'static dyn lang::Lang,
 }
 
@@ -269,6 +273,8 @@ async fn health(State(st): State<Arc<AppState>>) -> Response {
         "chunk": st.chunk,
         "chunk_takes": st.chunk_takes,
         "chunk_min_words": st.chunk_min_words,
+        "loudness": st.loudness,
+        "peak_db": st.peak_db,
         "cache_dir": st.cache_dir.to_string_lossy(),
     }))
     .into_response()
@@ -338,8 +344,30 @@ async fn tts(State(st): State<Arc<AppState>>, Json(req): Json<TtsReq>) -> Respon
             .lock()
             .map_err(|_| "backend poison".to_string())?;
 
+        // Keluaran mentah sekitar −28 LUFS dengan puncak −10 dBFS. Naikkan ke
+        // target loudness lalu batasi puncaknya, sekali di akhir supaya hasil
+        // gabungan antar kalimat tetap rata.
+        let rapikan = |s: Synth| -> Result<Synth, String> {
+            #[cfg(feature = "onnx")]
+            {
+                if st2.loudness == 0.0 {
+                    return Ok(s);
+                }
+                let mut x = laras::onnx::wav::read_mono(&out)
+                    .map_err(|e| format!("baca wav untuk normalisasi: {e:#}"))?;
+                let (gain, awal, akhir) =
+                    laras::level::normalize(&mut x, 24_000.0, st2.loudness, st2.peak_db);
+                laras::onnx::wav::write_mono(&out, &x)
+                    .map_err(|e| format!("tulis wav ternormalisasi: {e:#}"))?;
+                eprintln!("[level] {awal:.1} LUFS -> puncak {akhir:.1} dBFS (gain {gain:+.1} dB)");
+            }
+            Ok(s)
+        };
+
         if potongan.len() <= 1 {
-            return backend.synth(&key2, &text2, &ref2, takes, &out);
+            return backend
+                .synth(&key2, &text2, &ref2, takes, &out)
+                .and_then(rapikan);
         }
 
         // Banyak kalimat: sintesis satu per satu lalu disambung. Model kecil
@@ -369,7 +397,7 @@ async fn tts(State(st): State<Arc<AppState>>, Json(req): Json<TtsReq>) -> Respon
                 let _ = std::fs::remove_file(p);
             }
             hasil?;
-            Ok(Synth {
+            rapikan(Synth {
                 dur: total,
                 wer: None,
                 take: None,
@@ -426,6 +454,8 @@ async fn main() {
     let chunk = env_or("CHUNK", "1") != "0";
     let chunk_takes: u32 = env_or("CHUNK_TAKES", "1").parse().unwrap_or(1);
     let chunk_min_words: usize = env_or("CHUNK_MIN_WORDS", "20").parse().unwrap_or(20);
+    let loudness: f32 = env_or("LOUDNESS", "-18").parse().unwrap_or(-16.0);
+    let peak_db: f32 = env_or("PEAK_DB", "-1.5").parse().unwrap_or(-1.5);
     // 0 = pakai semua inti yang tersedia.
     let threads: usize = env_or("THREADS", "0").parse::<usize>().unwrap_or(0);
 
@@ -512,6 +542,8 @@ async fn main() {
         chunk,
         chunk_takes,
         chunk_min_words,
+        loudness,
+        peak_db,
         ref_wav,
         takes,
         lang: bahasa,
