@@ -112,14 +112,16 @@ impl Native {
             .engine
             .synthesize_best(text, &self.params, takes, None)?;
 
-        let kata = text.split_whitespace().count();
+        // Teks ternormalisasi dipakai dua-duanya: sebagai rujukan WER (kalau
+        // ASR aktif) dan sebagai hitungan kata untuk skor diagnostik.
+        let rujukan = self.lang.prepare(text);
+        let kata = rujukan.split_whitespace().count();
 
         // Pemilihan: kalau ASR tersedia, dengarkan tiap take dan ambil WER
         // terendah. Kalau tidak, pakai pilihan medoid bawaan mesin.
         #[cfg(feature = "asr")]
         let (audio, index, skor) = match &self.asr {
             Some(asr) if best.cands.len() > 1 => {
-                let rujukan = self.lang.prepare(text);
                 let mut pilih = best.index;
                 let mut terbaik = f32::INFINITY;
                 for (i, (_, audio, _)) in best.cands.iter().enumerate() {

@@ -46,6 +46,11 @@ name = "laras_onnx"
 path = "src/bin/laras_onnx.rs"
 required-features = ["onnx"]
 
+[[bin]]
+name = "asr_bench"
+path = "src/bin/asr_bench.rs"
+required-features = ["onnx", "asr"]
+
 [profile.release]
 opt-level = 3
 lto = true

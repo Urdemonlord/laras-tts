@@ -34,6 +34,22 @@ jobs:
       - run: cargo test --features onnx
       - run: cargo build --release --features onnx
 
+  # Fitur `asr` mengompilasi whisper.cpp lewat cmake + bindgen.
+  rust-asr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: asr
+      - run: sudo apt-get update && sudo apt-get install -y cmake libclang-dev
+      - run: cargo clippy --all-targets --features onnx,asr -- -D warnings
+      - run: cargo test --features onnx,asr
+      - run: cargo build --release --features onnx,asr
+
   python:
     runs-on: ubuntu-latest
     steps:
