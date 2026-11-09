@@ -183,7 +183,7 @@ Waktu respons HTTP (4 vCPU, `takes=3`):
 | `PORT` | `8080` | port HTTP |
 | `LARAS_LANG` | `id` | profil bahasa (`src/lang/`) |
 | `REF_WAV` | `data/ref/suara.wav` | referensi suara default |
-| `TAKES` | `3` | jumlah take untuk best-of-N |
+| `TAKES` | `3` | jumlah take untuk best-of-N; 5 = lebih bersih, ±21 s per kalimat sulit |
 | `CHUNK` | `1` | pecah teks per kalimat sebelum sintesis; `0` = satu lintasan |
 | `CHUNK_MIN_WORDS` | `20` | teks ≤ sekian kata tidak dipecah (tetap best-of-N + ASR) |
 | `CHUNK_TAKES` | `1` | take per kalimat saat teks dipecah |
@@ -280,7 +280,12 @@ beberapa instance di belakang nginx.
 - **Referensi >15 detik merusak output** (WER 0,75–1,0) — dipotong otomatis.
 - **Teks panjang harus di-chunk**; tanpa itu model berhenti di ~16 detik.
 - **Digit wajib dinormalisasi**; tanpa normalizer WER 0,71, dengan normalizer 0,00.
-- Gugus konsonan `kl-` kadang hilang ("kloning" → "koning") — batas model 6 layer.
+- **Artikulasi gugus konsonan adalah batas model, bukan decoding.** "kloning" → "koning",
+  "kereta" → "kretah". Menambah langkah ODE (2–4), menaikkan suhu (0,3–0,5), dan ejaan
+  ulang (`Keréta`, `Keran`) semuanya **tidak menolong** atau lebih buruk. Yang menolong
+  hanya menambah take: pada 12 kalimat sulit, WER 0,51 (1 take) → 0,32 (3) → 0,30 (5),
+  kalimat bersih 8% → 17% → 25%. Akarnya kosakata tokenizer 4.000 — "pramugari" dipecah
+  jadi 5 subkata.
 - Kecepatan bicara mengikuti tempo referensi.
 - Belum ada streaming; audio dikirim setelah selesai.
 - Normalizer baru Bahasa Indonesia (dan belum menangani semua format tanggal).
@@ -292,7 +297,7 @@ beberapa instance di belakang nginx.
 | P0 | Publish repo + benchmark hardware yang jelas ✅ |
 | P1 | ONNX Runtime di Rust — inferensi native ✅, penyambungan ke gateway ⏳ |
 | P1 | Streaming chunked response (kirim per kalimat) |
-| P1 | Kamus fonem (`kl-`, `-ngg-`) berbasis uji dengar + WER |
+| P1 | Latih ulang dengan kosakata 8–16 ribu — akar masalah artikulasi |
 | P2 | HF Spaces demo (referensi suara sintetis, bukan suara pribadi) |
 | P2 | Pool worker + `SO_REUSEPORT` |
 | P2 | Resampler polifase (kualitas akustik lebih baik) |

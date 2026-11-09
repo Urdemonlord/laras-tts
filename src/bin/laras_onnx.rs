@@ -64,6 +64,9 @@ fn run() -> Result<()> {
     if let Some(v) = arg(&args, "--eos") {
         params.eos_threshold = v.parse().map_err(|_| anyhow!("--eos bukan angka"))?;
     }
+    if let Some(v) = arg(&args, "--flow-steps") {
+        params.flow_steps = v.parse().map_err(|_| anyhow!("--flow-steps bukan angka"))?;
+    }
 
     // Noise eksternal untuk uji kesetaraan numerik terhadap implementasi Python.
     let noise: Option<Vec<f32>> = match arg(&args, "--noise") {

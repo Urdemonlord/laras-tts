@@ -474,6 +474,11 @@ async fn main() {
                 params.eos_threshold = v;
             }
         }
+        if let Ok(v) = std::env::var("FLOW_STEPS") {
+            if let Ok(v) = v.parse() {
+                params.flow_steps = v;
+            }
+        }
         if let Ok(v) = std::env::var("SEED") {
             if let Ok(v) = v.parse() {
                 params.seed = v;

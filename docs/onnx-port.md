@@ -264,6 +264,40 @@ Ambang 20 kata dipilih karena pengulangan di ujung baru muncul pada paragraf
 Respons membawa header `x-chunks` dan `x-takes` supaya pemanggil tahu jalur
 mana yang dipakai; `CHUNK=0` memaksa satu lintasan untuk semuanya.
 
+### Artikulasi: tiga hal yang tidak menolong
+
+Cacat yang paling sering dilaporkan: gugus konsonan hilang atau bergeser —
+"kloning" → "koning", "kereta" → "kretah", "pramugari" → "pamu gaddi",
+"stasiun" → "stasion". Diuji pada 12 kalimat yang sengaja penuh gugus konsonan
+(pr-, kr-, st-, tr-, gr-, kl-, -ngg-), dinilai faster-whisper `small`:
+
+| Percobaan | WER | Bersih |
+|---|---|---|
+| dasar: 1 langkah ODE, suhu 0,10, 1 take | 0,510 | 8% |
+| 2 langkah ODE | 0,600 | 17% |
+| 4 langkah ODE | 0,615 | 17% |
+| suhu 0,30 | 0,544 | 8% |
+| suhu 0,50 | 0,410 | 8% |
+| ejaan ulang (`Keréta`, `Keretaa`, `Stasyun`, `Keran`) | tidak menentu | – |
+| **3 take + pemilih ASR** | **0,318** | 17% |
+| **5 take + pemilih ASR** | **0,297** | 25% |
+
+Kesimpulan: **bukan masalah decoding.** Model ini didistilasi untuk satu langkah
+ODE, jadi memecah ODE justru merusak (0,51 → 0,60/0,62). Suhu lebih tinggi
+mengacak, bukan mempertegas. Ejaan ulang kadang menolong satu kata dan merusak
+kata lain — "Pra mugari" bahkan menghasilkan audio kosong.
+
+Akarnya ada di tokenizer: kosakata hanya 4.000, jadi banyak kata Indonesia
+pecah. `kereta` satu token, tetapi `pramugari` jadi lima subkata
+(`[107, 26, 428, 58, 3989]`) — dan justru kata-kata itulah yang paling sering
+salah ucap. Satu-satunya jalan keluar adalah melatih ulang dengan kosakata
+lebih besar (8–16 ribu), bukan menambal di sisi teks.
+
+Yang bisa dipakai sekarang: menambah take. Kurvanya nyata tapi melandai
+(0,32 → 0,30 dari 3 ke 5 take), dan biayanya 12,5 s → 21 s per kalimat sulit.
+Bawaan tetap `TAKES=3`; pakai `TAKES=5` untuk bahan yang akan didengar banyak
+orang.
+
 ### Level: −28 LUFS terlalu pelan
 
 Model mengeluarkan audio dengan puncak −10,7 dBFS dan loudness terintegrasi

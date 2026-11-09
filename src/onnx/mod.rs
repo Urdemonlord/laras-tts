@@ -122,6 +122,8 @@ pub struct Params {
     pub seed: u64,
     /// Frame tambahan setelah EOS terdeteksi.
     pub eos_extra: usize,
+    /// Langkah Euler untuk ODE flow. 1 = perilaku asli model.
+    pub flow_steps: usize,
 }
 
 impl Default for Params {
@@ -131,6 +133,7 @@ impl Default for Params {
             eos_threshold: -4.0,
             seed: 1234,
             eos_extra: 3,
+            flow_steps: 1,
         }
     }
 }
@@ -567,24 +570,40 @@ impl Engine {
                 None => (0..LATENT).map(|_| rng.normal() * std).collect(),
             };
 
-            let x = Value::from_array((Shape::from(vec![1, LATENT]), n.clone()))?.into_dyn();
-            let c = Value::from_array((Shape::from(vec![cond.len()]), cond))?.into_dyn();
-            let s0 = Value::from_array((Shape::from(vec![1usize, 1]), vec![0.0f32]))?.into_dyn();
-            let t1 = Value::from_array((Shape::from(vec![1usize, 1]), vec![1.0f32]))?.into_dyn();
-
-            let v = {
+            let n_cond = cond.len();
+            // ODE Euler; `flow_steps` > 1 memperhalus artikulasi dengan biaya
+            // waktu sebanding jumlah langkah.
+            let steps = params.flow_steps.max(1);
+            let mut cur_x = n.clone();
+            for k in 0..steps {
+                let sa = k as f32 / steps as f32;
+                let sb = (k + 1) as f32 / steps as f32;
+                let xv =
+                    Value::from_array((Shape::from(vec![1, LATENT]), cur_x.clone()))?.into_dyn();
+                let sk = Value::from_array((Shape::from(vec![1usize, 1]), vec![sa]))?.into_dyn();
+                let tk = Value::from_array((Shape::from(vec![1usize, 1]), vec![sb]))?.into_dyn();
+                let ck = Value::from_array((Shape::from(vec![n_cond]), cond.clone()))?.into_dyn();
                 let outs = self.flow.run(vec![
-                    (self.flow_ins[0].clone(), c),
-                    (self.flow_ins[1].clone(), s0),
-                    (self.flow_ins[2].clone(), t1),
-                    (self.flow_ins[3].clone(), x),
+                    (self.flow_ins[0].clone(), ck),
+                    (self.flow_ins[1].clone(), sk),
+                    (self.flow_ins[2].clone(), tk),
+                    (self.flow_ins[3].clone(), xv),
                 ])?;
-                outs.get(self.flow_out.as_str())
+                let v = outs
+                    .get(self.flow_out.as_str())
                     .ok_or_else(|| anyhow!("output flow hilang"))?
                     .try_extract_tensor::<f32>()?
                     .1
-                    .to_vec()
-            };
+                    .to_vec();
+                if v.len() != LATENT {
+                    return Err(anyhow!("output flow berukuran {} (harap 32)", v.len()));
+                }
+                let langkah = (sb - sa) as f64;
+                for (a, b) in cur_x.iter_mut().zip(v.iter()) {
+                    *a += b * langkah as f32;
+                }
+            }
+            let v = cur_x;
             if frames == 0 {
                 if let Ok(path) = std::env::var("LARAS_DUMP_FLOW0") {
                     let raw: Vec<u8> = v.iter().flat_map(|b| b.to_le_bytes()).collect();
@@ -592,11 +611,7 @@ impl Engine {
                 }
             }
 
-            if v.len() != LATENT {
-                return Err(anyhow!("output flow berukuran {} (harap 32)", v.len()));
-            }
-
-            cur = n.iter().zip(v.iter()).map(|(a, b)| a + b).collect();
+            cur = v;
             latents.extend_from_slice(&cur);
             frames += 1;
         }
