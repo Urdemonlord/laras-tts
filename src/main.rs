@@ -435,6 +435,207 @@ async fn tts(State(st): State<Arc<AppState>>, Json(req): Json<TtsReq>) -> Respon
     }
 }
 
+/// Header WAV 44 byte untuk aliran.
+///
+/// Ukuran total belum diketahui saat header dikirim, jadi `RIFF` dan `data`
+/// diisi `0xFFFFFFFF`. Pemutar berbasis ffmpeg/mpv berhenti saat koneksi
+/// ditutup; browser butuh `?fmt=pcm` karena `<audio>` menolak WAV tanpa
+/// panjang pasti.
+fn wav_header_stream() -> Vec<u8> {
+    let mut h = Vec::with_capacity(44);
+    h.extend_from_slice(b"RIFF");
+    h.extend_from_slice(&u32::MAX.to_le_bytes()); // ukuran berkas: tak diketahui
+    h.extend_from_slice(b"WAVEfmt ");
+    h.extend_from_slice(&16u32.to_le_bytes()); // panjang blok fmt
+    h.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    h.extend_from_slice(&1u16.to_le_bytes()); // mono
+    h.extend_from_slice(&24_000u32.to_le_bytes());
+    h.extend_from_slice(&48_000u32.to_le_bytes()); // byte/detik
+    h.extend_from_slice(&2u16.to_le_bytes()); // byte per frame
+    h.extend_from_slice(&16u16.to_le_bytes()); // bit per sampel
+    h.extend_from_slice(b"data");
+    h.extend_from_slice(&u32::MAX.to_le_bytes()); // ukuran data: tak diketahui
+    h
+}
+
+/// Sampel float → PCM 16-bit little-endian.
+///
+/// Tanpa fitur `onnx` backend Python sudah mengirim PCM 16-bit, jadi fungsi
+/// ini hanya dipakai jalur native.
+#[cfg_attr(not(feature = "onnx"), allow(dead_code))]
+fn pcm16(samples: &[f32]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(samples.len() * 2);
+    for s in samples {
+        out.extend_from_slice(&((s.clamp(-1.0, 1.0) * 32767.0).round() as i16).to_le_bytes());
+    }
+    out
+}
+
+#[derive(Deserialize)]
+struct StreamQuery {
+    /// `pcm` = PCM mentah 24 kHz mono 16-bit (untuk browser/JS),
+    /// selain itu WAV berukuran tak diketahui.
+    #[serde(default)]
+    fmt: Option<String>,
+}
+
+/// `POST /tts/stream` — audio mengalir per kalimat, bukan menunggu utuh.
+///
+/// Paragraf 4 kalimat yang butuh ±11 s dengan `/tts` mulai berbunyi pada
+/// kalimat pertama (±1–2 s). Tiap potongan dinormalkan levelnya sendiri,
+/// karena normalisasi gabungan baru bisa dihitung setelah semua potongan ada.
+async fn tts_stream(
+    State(st): State<Arc<AppState>>,
+    axum::extract::Query(q): axum::extract::Query<StreamQuery>,
+    Json(req): Json<TtsReq>,
+) -> Response {
+    use axum::body::Bytes;
+    use tokio_stream::wrappers::ReceiverStream;
+
+    let pcm_saja = q.fmt.as_deref() == Some("pcm");
+    let text = st.lang.prepare(&req.text);
+    if text.is_empty() {
+        return (StatusCode::BAD_REQUEST, "teks kosong").into_response();
+    }
+    let ref_wav = req.voice.unwrap_or_else(|| st.ref_wav.clone());
+    let takes_diminta = req.takes.unwrap_or(st.takes).clamp(1, 8);
+
+    #[cfg(feature = "onnx")]
+    let potongan: Vec<String> = {
+        let kata = text.split_whitespace().count();
+        if st.chunk && kata > st.chunk_min_words {
+            lang::potong_kalimat(&text)
+        } else {
+            vec![text.clone()]
+        }
+    };
+    #[cfg(not(feature = "onnx"))]
+    let potongan: Vec<String> = vec![text.clone()];
+
+    let takes = if potongan.len() > 1 {
+        st.chunk_takes.clamp(1, 8)
+    } else {
+        takes_diminta
+    };
+    let n = potongan.len();
+    let key = hash_key(&format!("{text}|{ref_wav}|{takes}"));
+    let cached = st.cache_dir.join(format!("{key}.wav"));
+
+    let tipe = if pcm_saja {
+        "audio/L16;rate=24000;channels=1"
+    } else {
+        "audio/wav"
+    };
+
+    // Hasil utuh sudah ada: tidak ada yang perlu dialirkan.
+    if let Ok(bytes) = std::fs::read(&cached) {
+        let body = if pcm_saja && bytes.len() > 44 && &bytes[..4] == b"RIFF" {
+            bytes[44..].to_vec()
+        } else {
+            bytes
+        };
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, tipe)
+            .header(header::CACHE_CONTROL, "no-store")
+            .header("x-cache", "hit")
+            .header("x-stream", "0")
+            .header("x-chunks", n.to_string())
+            .body(axum::body::Body::from(body))
+            .unwrap();
+    }
+
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(8);
+    let st2 = Arc::clone(&st);
+    let key2 = key.clone();
+    let ref2 = ref_wav.clone();
+    let teks = potongan.clone();
+    let n_chunks = n;
+
+    tokio::task::spawn_blocking(move || {
+        let kirim = |tx: &tokio::sync::mpsc::Sender<Result<Bytes, std::io::Error>>,
+                     b: Vec<u8>|
+         -> bool { tx.blocking_send(Ok(Bytes::from(b))).is_ok() };
+
+        if !pcm_saja && !kirim(&tx, wav_header_stream()) {
+            return;
+        }
+
+        let mut backend = match st2.backend.lock() {
+            Ok(b) => b,
+            Err(_) => {
+                let _ = tx.blocking_send(Err(std::io::Error::other("backend poison")));
+                return;
+            }
+        };
+
+        let jeda = vec![0u8; 3600 * 2]; // 0,15 s hening antar kalimat
+        for (i, k) in teks.iter().enumerate() {
+            let tmp = st2.cache_dir.join(format!("{key2}.s{i}.wav"));
+            let hasil = backend.synth(&format!("{key2}-{i}"), k, &ref2, takes, &tmp);
+            let bytes = match hasil {
+                Ok(_) => {
+                    #[cfg(feature = "onnx")]
+                    {
+                        let mut x = match laras::onnx::wav::read_mono(&tmp) {
+                            Ok(x) => x,
+                            Err(e) => {
+                                let _ = std::fs::remove_file(&tmp);
+                                let _ = tx.blocking_send(Err(std::io::Error::other(format!(
+                                    "baca potongan: {e:#}"
+                                ))));
+                                return;
+                            }
+                        };
+                        if st2.loudness != 0.0 {
+                            laras::level::normalize(&mut x, 24_000.0, st2.loudness, st2.peak_db);
+                        }
+                        pcm16(&x)
+                    }
+                    #[cfg(not(feature = "onnx"))]
+                    {
+                        // Backend Python sudah menulis wav 24 kHz 16-bit.
+                        match std::fs::read(&tmp) {
+                            Ok(b) if b.len() > 44 => b[44..].to_vec(),
+                            Ok(b) => b,
+                            Err(e) => {
+                                let _ = tx.blocking_send(Err(std::io::Error::other(format!(
+                                    "baca potongan: {e}"
+                                ))));
+                                return;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = std::fs::remove_file(&tmp);
+                    let _ = tx.blocking_send(Err(std::io::Error::other(e)));
+                    return;
+                }
+            };
+            let _ = std::fs::remove_file(&tmp);
+            if i > 0 && !kirim(&tx, jeda.clone()) {
+                return;
+            }
+            if !kirim(&tx, bytes) {
+                return; // klien pergi
+            }
+            eprintln!("[stream] potongan {}/{} terkirim", i + 1, n_chunks);
+        }
+    });
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, tipe)
+        .header(header::CACHE_CONTROL, "no-store")
+        .header("x-cache", "miss")
+        .header("x-stream", "1")
+        .header("x-chunks", n.to_string())
+        .header("x-takes", takes.to_string())
+        .body(axum::body::Body::from_stream(ReceiverStream::new(rx)))
+        .unwrap()
+}
+
 #[tokio::main]
 async fn main() {
     let lang_code = env_or("LARAS_LANG", "id");
@@ -558,6 +759,7 @@ async fn main() {
         .route("/health", get(health))
         .route("/normalize", get(normalize_handler))
         .route("/tts", post(tts))
+        .route("/tts/stream", post(tts_stream))
         .with_state(state);
 
     let bind = env_or("BIND", "127.0.0.1");
@@ -574,6 +776,29 @@ async fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn header_stream_44_byte_dan_sah() {
+        let h = wav_header_stream();
+        assert_eq!(h.len(), 44);
+        assert_eq!(&h[..4], b"RIFF");
+        assert_eq!(&h[8..16], b"WAVEfmt ");
+        assert_eq!(u16::from_le_bytes([h[20], h[21]]), 1, "PCM");
+        assert_eq!(u16::from_le_bytes([h[22], h[23]]), 1, "mono");
+        assert_eq!(u32::from_le_bytes([h[24], h[25], h[26], h[27]]), 24_000);
+        assert_eq!(u16::from_le_bytes([h[34], h[35]]), 16, "16-bit");
+        assert_eq!(&h[36..40], b"data");
+        assert_eq!(u32::from_le_bytes([h[40], h[41], h[42], h[43]]), u32::MAX);
+    }
+
+    #[test]
+    fn pcm16_dua_byte_per_sampel_dan_dibatasi() {
+        assert_eq!(pcm16(&[0.0, 1.0, -1.0, 2.0, -2.0]).len(), 10);
+        let b = pcm16(&[1.0]);
+        assert_eq!(i16::from_le_bytes([b[0], b[1]]), 32767);
+        let b = pcm16(&[-2.0]);
+        assert_eq!(i16::from_le_bytes([b[0], b[1]]), -32767);
+    }
 
     #[test]
     fn cache_key_stabil_dan_pendek() {

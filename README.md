@@ -136,6 +136,40 @@ tertentu, jadi hasilnya reproducible.
 Kunci cache = `sha256(teks siap-pakai | voice | takes)`; request identik
 dilayani ~0,9 ms.
 
+### `POST /tts/stream`
+
+Badan permintaan sama dengan `/tts`, tetapi audio **dikirim per kalimat**:
+kalimat pertama bisa didengar sementara kalimat terakhir masih disintesis.
+
+```bash
+# WAV mengalir (header berukuran tak diketahui)
+curl -sN -X POST localhost:8080/tts/stream -H 'content-type: application/json' \
+  -d '{"text":"Kalimat pertama. Kalimat kedua. Kalimat ketiga."}' -o hasil.wav
+
+# PCM mentah 24 kHz mono 16-bit — untuk browser / pemutar apa pun
+curl -sN -X POST 'localhost:8080/tts/stream?fmt=pcm' -H 'content-type: application/json' \
+  -d '{"text":"..."}' | ffplay -f s16le -ar 24000 -ac 1 -
+```
+
+| Header | Isi |
+|---|---|
+| `x-stream` | `1` = benar-benar mengalir, `0` = dilayani dari cache utuh |
+| `x-chunks` | jumlah potongan kalimat yang akan dikirim |
+| `x-cache` | `hit` atau `miss` |
+| `x-takes` | take per potongan |
+
+`fmt=pcm` mengembalikan `audio/L16;rate=24000;channels=1` tanpa header
+kontainer — paling aman untuk `<audio>`/Web Audio, karena WAV tanpa panjang
+pasti ditolak sebagian browser. Tanpa `fmt`, isinya WAV dengan `RIFF` dan
+`data` berukuran `0xFFFFFFFF`; ffmpeg/mpv memutarnya sampai koneksi ditutup
+(ffmpeg mencetak satu baris `Packet corrupt` di akhir — kosmetik, audio hasil
+decode **bit-identik** dengan PCM-nya).
+
+Dua hal yang berbeda dari `/tts`: normalisasi loudness dihitung **per
+potongan** (bukan sekali di akhir, karena totalnya belum diketahui), dan
+`/tts/stream` tidak menulis cache — permintaan berikutnya ke teks yang sama
+tetap memakai cache `/tts` kalau ada (`x-stream: 0`).
+
 ### `GET /health`
 
 ```json
@@ -228,6 +262,27 @@ Batas bawahnya jelas: satu panggilan ASR ±4 s, jadi selama pemilihan memakai
 whisper `small` pada jendela 768, rata-rata tidak akan turun jauh di bawah 5 s
 tanpa mengganti model ASR-nya.
 
+### Streaming (`/tts/stream`)
+
+Yang dirasakan pendengar bukan total waktu, tapi kapan suara pertama keluar.
+Teks 8 kalimat (22,7 s audio, `CHUNK_TAKES=1`, 4 vCPU, cache kosong):
+
+| Momen | `/tts` | `/tts/stream` |
+|---|---|---|
+| byte pertama (mulai berbunyi) | 3,76 s | **0,26 s** |
+| 25% audio terkirim | – | 1,38 s |
+| 50% audio terkirim | – | 2,04 s |
+| 100% audio terkirim | 3,76 s | 3,85 s |
+
+Jadi suara pertama 14× lebih cepat, dengan biaya total +0,09 s (2,4%) untuk
+pengiriman bertahap. Tidak ada byte tambahan: 1.091.084 byte di kedua jalur,
+dan PCM hasil decode identik bit-per-bit.
+
+Yang perlu diketahui: pemecahan per kalimat baru aktif di atas
+`CHUNK_MIN_WORDS` (20 kata). Untuk kalimat tunggal, `/tts/stream` tetap
+menunggu satu take selesai — pada teks 4 kata dengan `takes=3` + ASR, keduanya
+sama-sama 8,8 s. Streaming menolong teks panjang, bukan teks pendek.
+
 ## Level audio
 
 Keluaran mentah mesin ini sekitar **−28 LUFS** dengan puncak −10,7 dBFS: harus
@@ -295,8 +350,9 @@ beberapa instance di belakang nginx.
 | Prioritas | Pekerjaan |
 |---|---|
 | P0 | Publish repo + benchmark hardware yang jelas ✅ |
-| P1 | ONNX Runtime di Rust — inferensi native ✅, penyambungan ke gateway ⏳ |
-| P1 | Streaming chunked response (kirim per kalimat) |
+| P1 | ONNX Runtime di Rust — inferensi native ✅, penyambungan ke gateway ✅ |
+| P1 | Streaming chunked response (kirim per kalimat) ✅ |
+| P1 | Tag `v0.1.0` + image Docker publik |
 | P1 | Latih ulang dengan kosakata 8–16 ribu — akar masalah artikulasi |
 | P2 | HF Spaces demo (referensi suara sintetis, bukan suara pribadi) |
 | P2 | Pool worker + `SO_REUSEPORT` |
