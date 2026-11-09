@@ -45,7 +45,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: asr
-      - run: sudo apt-get update && sudo apt-get install -y cmake libclang-dev
+      - run: sudo apt-get update && sudo apt-get install -y cmake
+      # libclang dari apt (versi baru) menghasilkan binding tanpa field
+      # `greedy` yang masih dipakai whisper-rs 0.12, jadi build gagal dengan
+      # E0609. Libclang bawaan paket pip sudah terbukti cocok.
+      - run: pip install libclang
+      - run: |
+          LIBCLANG=$(python -c 'import clang, os; print(os.path.join(os.path.dirname(clang.__file__), "native"))')
+          echo "LIBCLANG_PATH=$LIBCLANG" >> $GITHUB_ENV
       - run: cargo clippy --all-targets --features onnx,asr -- -D warnings
       - run: cargo test --features onnx,asr
       - run: cargo build --release --features onnx,asr
