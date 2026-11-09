@@ -5,12 +5,15 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/data          # isi: ref/suara.wav (10-15 detik)
+      # isi: models/ (5 graf ONNX + tokenizer.model + bos_before_voice.npy),
+      #      ref/suara.wav (10-15 detik), cache/
+      - ./data:/data
     environment:
       LARAS_LANG: "id"
-      TAKES: "3"
-      USE_ASR: "1"
-      POCKET_CFG: "hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@17257664e384561c957b02ac92edd1a24807f0e5"
-    # worker butuh ~2,1 GB; batasi supaya tidak menabrak layanan lain
+      TAKES: "3"        # kandidat per permintaan; dipilih otomatis tanpa ASR
+      TEMP: "0.1"       # temperatur sampling latent
+      EOS: "-4.0"       # ambang logit EOS
+      THREADS: "0"      # 0 = semua inti
+    # model + KV cache tinggal di RAM (~1,9 GB); beri ruang, jangan mepet
     mem_limit: 3g
     restart: unless-stopped

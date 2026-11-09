@@ -29,10 +29,12 @@ yang menambal empat hal yang membuat model mentah belum layak dipakai:
 | Angka dibaca kacau (`15` → "satu lima", WER 0,71) | normalizer angka Indonesia di Rust (`Rp 12.500` → "dua belas ribu lima ratus rupiah") |
 | Berhenti di ~16 detik lalu mengarang | chunking per kalimat + jeda 0,12 s |
 | Referensi >15 detik merusak hasil (WER 0,75–1,0) | potong referensi otomatis, ambil dari sampel bersuara pertama |
-| Output tidak stabil antar-generate | N take, pilih yang WER-nya terendah (Whisper-small) |
+| Output tidak stabil antar-generate | N take, pilih yang WER-nya terendah (Whisper di dalam proses) |
 
-Hasil terukur: **WER 0,00–0,08** pada teks normal, kemiripan suara
-**0,80–0,89** (Resemblyzer), tanpa GPU.
+Hasil terukur pada **394 kalimat** (Tatoeba, temp 0,10, satu take):
+**WER 0,19–0,22**, 42–48% kalimat tanpa salah kata, kemiripan suara
+**0,80–0,89** (Resemblyzer), tanpa GPU. Angka 0,00–0,08 yang beredar di
+versi awal README berasal dari 12 kalimat pilihan — jangan dipakai.
 
 ## Posisi proyek
 
@@ -161,7 +163,11 @@ Waktu respons HTTP (4 vCPU, `takes=3`):
 | `LARAS_LANG` | `id` | profil bahasa (`src/lang/`) |
 | `REF_WAV` | `data/ref/suara.wav` | referensi suara default |
 | `TAKES` | `3` | jumlah take untuk best-of-N |
-| `USE_ASR` | `1` | `0` = matikan skoring WER (1 take, lebih cepat) |
+| `MODELS_DIR` | `data/onnx` | direktori graf ONNX (backend native) |
+| `ASR_MODEL` | _(kosong)_ | path `ggml-*.bin`; kalau diisi, take dipilih dengan WER ASR |
+| `ASR_CTX` | `0` (penuh 1500) | jendela encoder whisper; 768 ±2,2× lebih cepat |
+| `ASR_THREADS` | `1` | thread whisper; di 4 vCPU 1 thread justru tercepat |
+| `USE_ASR` | `1` | `0` = matikan skoring WER di backend `worker.py` |
 | `CACHE_DIR` | `data/cache` | cache WAV |
 | `WORKER_PY` | `python3` | interpreter worker |
 | `WORKER_SCRIPT` | `worker.py` | path worker |
@@ -211,11 +217,12 @@ beberapa instance di belakang nginx.
 | Prioritas | Pekerjaan |
 |---|---|
 | P0 | Publish repo + benchmark hardware yang jelas ✅ |
-| P1 | ONNX Runtime di Rust, hapus dependensi Python |
+| P1 | ONNX Runtime di Rust — inferensi native ✅, penyambungan ke gateway ⏳ |
 | P1 | Streaming chunked response (kirim per kalimat) |
 | P1 | Kamus fonem (`kl-`, `-ngg-`) berbasis uji dengar + WER |
 | P2 | HF Spaces demo (referensi suara sintetis, bukan suara pribadi) |
 | P2 | Pool worker + `SO_REUSEPORT` |
+| P2 | Resampler polifase (kualitas akustik lebih baik) |
 | P3 | SDK Rust / Python / JavaScript |
 | P3 | Watermark audio (AudioSeal) sebagai opsi |
 

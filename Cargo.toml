@@ -19,6 +19,33 @@ sha2 = "0.10"
 hex = "0.4"
 regex = "1"
 
+# Mesin inferensi native (fitur `onnx`) — CPU-only.
+anyhow = { version = "1", optional = true }
+ort = { version = "2.0.0-rc.15", optional = true, features = ["half"] }
+half = { version = "2", optional = true }
+hound = { version = "3.5", optional = true }
+unicode-normalization = { version = "0.1", optional = true }
+# Pemilih take berbasis ASR (whisper.cpp) — opsi A tanpa Python.
+whisper-rs = { version = "0.12", optional = true }
+
+[features]
+default = []
+# Port inferensi native: menggantikan worker Python dengan ONNX Runtime.
+onnx = [
+    "dep:anyhow",
+    "dep:ort",
+    "dep:half",
+    "dep:hound",
+    "dep:unicode-normalization",
+]
+# Seleksi take dengan mendengarkan hasil sintesis (butuh `onnx`).
+asr = ["onnx", "dep:whisper-rs"]
+
+[[bin]]
+name = "laras_onnx"
+path = "src/bin/laras_onnx.rs"
+required-features = ["onnx"]
+
 [profile.release]
 opt-level = 3
 lto = true

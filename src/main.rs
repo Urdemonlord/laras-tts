@@ -1,23 +1,21 @@
 //! laras — engine TTS Bahasa Indonesia, CPU-first, dengan kloning suara.
 //!
-//! Tanggung jawab inti (semua di Rust):
+//! Tanggung jawab (semua di Rust):
 //!   * normalisasi teks lewat profil bahasa (`src/lang/`)
 //!   * cache hasil berdasarkan hash teks + voice + takes
-//!   * serialisasi akses ke worker (1 proses Python, model tetap di RAM)
+//!   * sintesis lewat backend native ONNX Runtime (fitur `onnx`)
 //!
-//! Worker (Python, `worker.py`) melakukan chunking per kalimat, generasi,
-//! best-of-N dipilih lewat WER Whisper, lalu menulis WAV 24 kHz mono.
+//! Dengan `--features onnx` tidak ada proses Python sama sekali: model dimuat
+//! sekali ke dalam proses ini, lalu `takes` kandidat digenerate dan yang
+//! terbaik dipilih tanpa ASR (medoid di ruang latent).
 //!
-//! Engine inferensi masih Python hari ini. Itu batasan yang disadari, bukan
-//! tujuan: kontrak HTTP di sini stabil supaya engine bisa ditukar ke ONNX
-//! Runtime tanpa mengubah klien.
+//! Tanpa fitur `onnx`, build tetap jalan memakai `worker.py` sebagai backend
+//! cadangan supaya kontrak HTTP bisa diuji tanpa runtime ONNX.
 
 mod lang;
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::{Arc, Mutex};
 
 use axum::extract::State;
@@ -28,23 +26,162 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-// ------------------------------------------------------------------- worker
+#[cfg(feature = "onnx")]
+mod native;
 
-struct Worker {
-    _child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+#[cfg(feature = "asr")]
+mod asr;
+
+// --------------------------------------------------------------- backend
+
+#[cfg(not(feature = "onnx"))]
+mod worker {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+
+    pub struct Worker {
+        pub child: Child,
+        stdin: ChildStdin,
+        stdout: BufReader<ChildStdout>,
+    }
+
+    impl Worker {
+        pub fn spawn(python: &str, script: &str, envs: &[(&str, String)]) -> Self {
+            let mut cmd = Command::new(python);
+            cmd.arg(script)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::inherit());
+            for (k, v) in envs {
+                cmd.env(k, v);
+            }
+            let mut child = cmd.spawn().expect("gagal spawn worker");
+            let stdin = child.stdin.take().expect("stdin worker");
+            let mut stdout = BufReader::new(child.stdout.take().expect("stdout worker"));
+            let mut hello = String::new();
+            if matches!(stdout.read_line(&mut hello), Ok(n) if n > 0) {
+                eprintln!("worker siap: {}", hello.trim());
+            }
+            Self {
+                child,
+                stdin,
+                stdout,
+            }
+        }
+
+        /// Kirim satu permintaan; kembalikan (path, durasi, wer).
+        pub fn synth(
+            &mut self,
+            key: &str,
+            text: &str,
+            ref_wav: &str,
+            takes: u32,
+        ) -> Result<(String, Option<f64>, Option<f64>), String> {
+            let payload = serde_json::json!({
+                "id": key, "text": text, "ref": ref_wav, "takes": takes,
+            });
+            let mut line = payload.to_string();
+            line.push('\n');
+            self.stdin
+                .write_all(line.as_bytes())
+                .and_then(|_| self.stdin.flush())
+                .map_err(|e| format!("worker tidak bisa ditulis: {e}"))?;
+
+            let mut resp = String::new();
+            match self.stdout.read_line(&mut resp) {
+                Ok(0) => return Err("worker mati".into()),
+                Ok(_) => {}
+                Err(e) => return Err(format!("baca worker gagal: {e}")),
+            }
+            let v: serde_json::Value = serde_json::from_str(resp.trim())
+                .map_err(|e| format!("respons worker bukan JSON: {e}: {resp}"))?;
+            if v.get("ok").and_then(|x| x.as_bool()) != Some(true) {
+                let err = v.get("err").and_then(|x| x.as_str()).unwrap_or("unknown");
+                return Err(format!("worker error: {err}"));
+            }
+            Ok((
+                v.get("path").and_then(|x| x.as_str()).unwrap_or("").into(),
+                v.get("dur").and_then(|x| x.as_f64()),
+                v.get("wer").and_then(|x| x.as_f64()),
+            ))
+        }
+    }
+}
+
+enum Backend {
+    #[cfg(feature = "onnx")]
+    Native(native::Native),
+    #[cfg(not(feature = "onnx"))]
+    Worker(worker::Worker),
+}
+
+struct Synth {
+    dur: f64,
+    wer: Option<f64>,
+    take: Option<usize>,
+}
+
+impl Backend {
+    /// Sintesis ke `out`, kembalikan metadata.
+    fn synth(
+        &mut self,
+        key: &str,
+        text: &str,
+        ref_wav: &str,
+        takes: u32,
+        out: &std::path::Path,
+    ) -> Result<Synth, String> {
+        match self {
+            #[cfg(feature = "onnx")]
+            Backend::Native(n) => {
+                let _ = key;
+                let (dur, take, _score) = n
+                    .synth_to(text, ref_wav, takes as usize, out)
+                    .map_err(|e| format!("sintesis gagal: {e:#}"))?;
+                Ok(Synth {
+                    dur,
+                    wer: None,
+                    take: Some(take),
+                })
+            }
+            #[cfg(not(feature = "onnx"))]
+            Backend::Worker(w) => {
+                let (path, dur, wer) = w.synth(key, text, ref_wav, takes)?;
+                std::fs::copy(&path, out).map_err(|e| format!("salin wav gagal: {e}"))?;
+                Ok(Synth {
+                    dur: dur.unwrap_or(0.0),
+                    wer,
+                    take: None,
+                })
+            }
+        }
+    }
+
+    fn describe(&self) -> serde_json::Value {
+        match self {
+            #[cfg(feature = "onnx")]
+            Backend::Native(n) => serde_json::json!({
+                "kind": "onnx-native",
+                "models": n.models().to_string_lossy(),
+                "voice": n.active_voice(),
+                "asr": n.asr_aktif(),
+            }),
+            #[cfg(not(feature = "onnx"))]
+            Backend::Worker(w) => serde_json::json!({
+                "kind": "python-worker",
+                "pid": w.child.id(),
+            }),
+        }
+    }
 }
 
 struct AppState {
-    worker: Mutex<Worker>,
+    backend: Mutex<Backend>,
     cache_dir: PathBuf,
     ref_wav: String,
     takes: u32,
     lang: &'static dyn lang::Lang,
 }
-
-const DEFAULT_POCKET_CFG: &str = "hf://anak10thn/pocket-tts-indonesian/indonesian_6l.yaml@17257664e384561c957b02ac92edd1a24807f0e5";
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
@@ -56,17 +193,22 @@ fn hash_key(s: &str) -> String {
     hex::encode(&h.finalize()[..12])
 }
 
-fn wav_response(bytes: Vec<u8>, cached: bool, dur: Option<f64>, wer: Option<f64>) -> Response {
+fn wav_response(bytes: Vec<u8>, cached: bool, s: Option<&Synth>) -> Response {
     let mut b = Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "audio/wav")
         .header(header::CACHE_CONTROL, "no-store")
         .header("x-cache", if cached { "hit" } else { "miss" });
-    if let Some(d) = dur {
-        b = b.header("x-duration", format!("{d:.2}"));
-    }
-    if let Some(w) = wer {
-        b = b.header("x-wer", format!("{w:.3}"));
+    if let Some(s) = s {
+        if s.dur > 0.0 {
+            b = b.header("x-duration", format!("{:.2}", s.dur));
+        }
+        if let Some(w) = s.wer {
+            b = b.header("x-wer", format!("{w:.3}"));
+        }
+        if let Some(t) = s.take {
+            b = b.header("x-take", t.to_string());
+        }
     }
     b.body(axum::body::Body::from(bytes)).unwrap()
 }
@@ -95,12 +237,12 @@ async fn normalize_handler(
 }
 
 async fn health(State(st): State<Arc<AppState>>) -> Response {
-    let w = st.worker.lock().unwrap();
+    let backend = st.backend.lock().map(|b| b.describe()).unwrap_or_default();
     Json(serde_json::json!({
         "ok": true,
         "engine": "laras",
         "version": env!("CARGO_PKG_VERSION"),
-        "pid": w._child.id(),
+        "backend": backend,
         "lang": st.lang.code(),
         "default_voice": st.ref_wav,
         "takes": st.takes,
@@ -115,70 +257,43 @@ async fn tts(State(st): State<Arc<AppState>>, Json(req): Json<TtsReq>) -> Respon
         return (StatusCode::BAD_REQUEST, "teks kosong").into_response();
     }
     let ref_wav = req.voice.unwrap_or_else(|| st.ref_wav.clone());
-    let takes = req.takes.unwrap_or(st.takes).clamp(1, 5);
+    let takes = req.takes.unwrap_or(st.takes).clamp(1, 8);
     let key = hash_key(&format!("{text}|{ref_wav}|{takes}"));
     let cached_path = st.cache_dir.join(format!("{key}.wav"));
 
     if let Ok(bytes) = std::fs::read(&cached_path) {
-        return wav_response(bytes, true, None, None);
+        return wav_response(bytes, true, None);
     }
 
-    let mut w = st.worker.lock().unwrap();
-    let payload = serde_json::json!({
-        "id": key,
-        "text": text,
-        "ref": ref_wav,
-        "takes": takes,
-    });
-    let mut line = payload.to_string();
-    line.push('\n');
-    if let Err(e) = w
-        .stdin
-        .write_all(line.as_bytes())
-        .and_then(|_| w.stdin.flush())
-    {
-        return (
-            StatusCode::BAD_GATEWAY,
-            format!("worker tidak bisa ditulis: {e}"),
-        )
-            .into_response();
-    }
+    // Sintesis memakan CPU penuh: jalankan di thread blocking, bukan di runtime.
+    let st2 = Arc::clone(&st);
+    let out = cached_path.clone();
+    let text2 = text.clone();
+    let ref2 = ref_wav.clone();
+    let key2 = key.clone();
+    let res = tokio::task::spawn_blocking(move || {
+        let mut backend = st2
+            .backend
+            .lock()
+            .map_err(|_| "backend poison".to_string())?;
+        backend.synth(&key2, &text2, &ref2, takes, &out)
+    })
+    .await;
 
-    let mut resp = String::new();
-    match w.stdout.read_line(&mut resp) {
-        Ok(0) => return (StatusCode::BAD_GATEWAY, "worker mati").into_response(),
-        Ok(_) => {}
-        Err(e) => {
-            return (StatusCode::BAD_GATEWAY, format!("baca worker gagal: {e}")).into_response()
-        }
-    }
-
-    let v: serde_json::Value = match serde_json::from_str(resp.trim()) {
-        Ok(v) => v,
+    let synth = match res {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => return (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
         Err(e) => {
             return (
-                StatusCode::BAD_GATEWAY,
-                format!("respons worker bukan JSON: {e}: {resp}"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("tugas sintesis gagal: {e}"),
             )
                 .into_response()
         }
     };
-    if v.get("ok").and_then(|x| x.as_bool()) != Some(true) {
-        let err = v.get("err").and_then(|x| x.as_str()).unwrap_or("unknown");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("worker error: {err}"),
-        )
-            .into_response();
-    }
-    let path = v.get("path").and_then(|x| x.as_str()).unwrap_or_default();
-    let dur = v.get("dur").and_then(|x| x.as_f64());
-    let wer = v.get("wer").and_then(|x| x.as_f64());
-    match std::fs::read(path) {
-        Ok(bytes) => {
-            let _ = std::fs::copy(path, &cached_path);
-            wav_response(bytes, false, dur, wer)
-        }
+
+    match std::fs::read(&cached_path) {
+        Ok(bytes) => wav_response(bytes, false, Some(&synth)),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("wav tidak terbaca: {e}"),
@@ -203,41 +318,88 @@ async fn main() {
     std::fs::create_dir_all(&cache_dir).expect("cache dir");
     let ref_wav = env_or("REF_WAV", "data/ref/suara.wav");
     let takes: u32 = env_or("TAKES", "3").parse().unwrap_or(3);
+    // 0 = pakai semua inti yang tersedia.
+    let threads: usize = env_or("THREADS", "0").parse::<usize>().unwrap_or(0);
 
-    let python = env_or("WORKER_PY", "python3");
-    let script = env_or("WORKER_SCRIPT", "worker.py");
-    eprintln!("menjalankan worker: {python} {script}");
+    #[cfg(feature = "onnx")]
+    let backend = {
+        use laras::onnx::Params;
+        let models = PathBuf::from(env_or("MODELS_DIR", "data/models"));
+        let mut params = Params::default();
+        if let Ok(v) = std::env::var("TEMP") {
+            if let Ok(v) = v.parse() {
+                params.temperature = v;
+            }
+        }
+        if let Ok(v) = std::env::var("EOS") {
+            if let Ok(v) = v.parse() {
+                params.eos_threshold = v;
+            }
+        }
+        if let Ok(v) = std::env::var("SEED") {
+            if let Ok(v) = v.parse() {
+                params.seed = v;
+            }
+        }
+        let threads = if threads == 0 {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4)
+        } else {
+            threads
+        };
+        eprintln!(
+            "memuat model native dari {} ({} thread, temp {})",
+            models.display(),
+            threads,
+            params.temperature
+        );
 
-    let mut child = Command::new(&python)
-        .arg(&script)
-        .env("POCKET_CFG", env_or("POCKET_CFG", DEFAULT_POCKET_CFG))
-        .env("WORKER_OUT", env_or("WORKER_OUT", "data/out"))
-        .env("USE_ASR", env_or("USE_ASR", "1"))
-        .env("EOS", env_or("EOS", "-3.0"))
-        .env("HF_HOME", env_or("HF_HOME", "data/hf"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .expect("gagal spawn worker (cek WORKER_PY / WORKER_SCRIPT)");
+        // Pemilih take berbasis ASR: aktif hanya kalau ASR_MODEL diisi.
+        #[cfg(feature = "asr")]
+        let asr = match std::env::var("ASR_MODEL") {
+            Ok(p) if !p.is_empty() => {
+                let path = PathBuf::from(&p);
+                eprintln!("memuat model ASR dari {}", path.display());
+                let a = asr::Asr::new(&path, threads).expect("gagal memuat model ASR");
+                Some(a)
+            }
+            _ => None,
+        };
 
-    let stdin = child.stdin.take().expect("stdin worker");
-    let mut stdout = BufReader::new(child.stdout.take().expect("stdout worker"));
+        Backend::Native(
+            native::Native::new(
+                models,
+                threads,
+                params,
+                &lang_code,
+                #[cfg(feature = "asr")]
+                asr,
+            )
+            .expect("gagal memuat model ONNX"),
+        )
+    };
 
-    // Baris pertama worker adalah handshake {"ready":true,...}; harus dihabiskan
-    // di sini, kalau tidak akan terbaca sebagai respons request pertama.
-    let mut hello = String::new();
-    match stdout.read_line(&mut hello) {
-        Ok(n) if n > 0 => eprintln!("worker siap: {}", hello.trim()),
-        _ => eprintln!("worker tidak mengirim handshake (lanjut saja)"),
-    }
+    #[cfg(not(feature = "onnx"))]
+    let backend = {
+        let _ = threads;
+        let python = env_or("WORKER_PY", "python3");
+        let script = env_or("WORKER_SCRIPT", "worker.py");
+        eprintln!("menjalankan worker: {python} {script}");
+        Backend::Worker(worker::Worker::spawn(
+            &python,
+            &script,
+            &[
+                ("WORKER_OUT", env_or("WORKER_OUT", "data/out")),
+                ("USE_ASR", env_or("USE_ASR", "1")),
+                ("EOS", env_or("EOS", "-3.0")),
+                ("HF_HOME", env_or("HF_HOME", "data/hf")),
+            ],
+        ))
+    };
 
     let state = Arc::new(AppState {
-        worker: Mutex::new(Worker {
-            _child: child,
-            stdin,
-            stdout,
-        }),
+        backend: Mutex::new(backend),
         cache_dir,
         ref_wav,
         takes,
