@@ -126,6 +126,9 @@ impl Asr {
     /// berarti tiga kali kerja encoder — bagian termahal. Take digabung
     /// dengan jeda senyap (ASR_GAP, bawaan 1,5 s) sehingga cukup satu lintasan; segmen
     /// dipetakan balik ke take berdasarkan waktu mulai.
+    /// Dipakai `asr_bench`; jalur permintaan memakai `wer` per take karena
+    /// pemilihan berhenti begitu satu take lolos ambang.
+    #[allow(dead_code)]
     pub fn wer_banyak(&self, audios: &[&[f32]], rujukan: &str) -> Result<Vec<f32>> {
         // Jeda antar take: whisper baru memecah segmen kalau senyapnya cukup
         // panjang. 0,6 s ternyata masih digabung jadi satu segmen.
