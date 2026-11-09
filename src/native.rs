@@ -122,16 +122,23 @@ impl Native {
         #[cfg(feature = "asr")]
         let (audio, index, skor) = match &self.asr {
             Some(asr) if best.cands.len() > 1 => {
-                let mut pilih = best.index;
-                let mut terbaik = f32::INFINITY;
-                for (i, (_, audio, _)) in best.cands.iter().enumerate() {
-                    if let Ok(w) = asr.wer(audio, &rujukan) {
-                        if w < terbaik {
-                            terbaik = w;
-                            pilih = i;
-                        }
+                let audios: Vec<&[f32]> = best.cands.iter().map(|(_, a, _)| a.as_slice()).collect();
+                let (pilih, terbaik) = match asr.wer_banyak(&audios, &rujukan) {
+                    Ok(skor) => {
+                        let (i, w) = skor.iter().enumerate().fold(
+                            (best.index, f32::INFINITY),
+                            |(bi, bw), (i, w)| {
+                                if *w < bw {
+                                    (i, *w)
+                                } else {
+                                    (bi, bw)
+                                }
+                            },
+                        );
+                        (i, w)
                     }
-                }
+                    Err(_) => (best.index, best.diag().score(kata)),
+                };
                 (best.cands[pilih].1.as_slice(), pilih, terbaik)
             }
             _ => (best.audio(), best.index, best.diag().score(kata)),

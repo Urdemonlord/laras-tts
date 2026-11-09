@@ -171,6 +171,37 @@ whisper-small, jadi WER absolutnya optimistis. Yang bisa dipercaya adalah
 selisih berpasangannya, karena kedua sisi diukur dengan alat yang sama pada
 teks yang sama.
 
+### Dua detik sudah cukup — tapi tidak menghemat waktu
+
+Kesalahan artikulasi terdengar di awal kalimat, jadi mendengar seluruh take
+tidak menambah informasi untuk memilih (`ASR_MAX_S=2`, 60 kalimat yang sama):
+
+| Cara dengar | WER pilihan | bersih |
+|---|---|---|
+| seluruh take | 0,108 | 63% |
+| 2 detik pertama | 0,105 | 65% |
+
+Selisih −0,003, CI95 [−0,014, +0,004], 97% kalimat memilih take yang sama
+nilainya. Tapi waktunya **tidak** turun: biaya whisper ditentukan jendela
+encoder (`audio_ctx`), bukan panjang audio. Memotong audio hanya menghemat
+token dekoder — beberapa persen. `ASR_MAX_S` tetap disediakan, tapi bukan
+tuas kecepatan.
+
+### Satu lintasan untuk semua take
+
+Yang benar-benar menghemat: take digabung berurutan dengan jeda senyap
+(`ASR_GAP`, bawaan 1,5 s), ditranskrip **sekali**, lalu segmen dipetakan
+balik ke take berdasarkan waktu mulai. Pada 60 kalimat, take yang dipilih
+**identik 100%** dengan cara transkrip terpisah (WER 0,108 keduanya), dengan
+waktu per permintaan turun dari ±22 s ke ±14–19 s di 4 vCPU.
+
+Jeda 0,6 s tidak cukup: whisper menggabungkan ketiga take jadi satu segmen.
+Kalau pemetaan gagal (segmen tidak terpecah), kode jatuh kembali ke transkrip
+terpisah — lambat tapi benar.
+
+`ASR_CTX=512` diuji 27 kalimat: WER 0,117 vs 0,099 pada subset yang sama,
+jadi lebih buruk dan hanya menghemat ±1,7 s. Bawaan tetap 768.
+
 ### Pemakaian
 
 ```bash

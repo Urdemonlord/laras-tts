@@ -47,8 +47,14 @@ kalimat berpasangan (3 take, temp 0,10):
 
 Selisih berpasangan **−0,035, CI95 [−0,070, −0,001]**; menang 18%, kalah 3%,
 seri 78%. Artinya selektor mengambil hampir seluruh keuntungan yang tersedia
-(0,108 vs batas 0,098). Ongkosnya: ±13 s tambahan per permintaan di 4 vCPU,
-jadi fitur ini untuk batch, bukan pratonton.
+(0,108 vs batas 0,098).
+
+Ketiga take ditranskrip dalam **satu lintasan encoder** (digabung dengan jeda
+1,5 s lalu dipetakan balik per waktu), dan itu memilih take yang persis sama
+dengan cara terpisah — hanya lebih cepat: ±14–19 s per permintaan di 4 vCPU
+versus ±22 s. Mendengar 2 detik pertama saja juga cukup akurat (0,105 vs
+0,108) tapi tidak menghemat waktu, karena biayanya di jendela encoder.
+Ongkos ASR tetap nyata: pakai untuk batch, bukan pratonton.
 
 ## Posisi proyek
 

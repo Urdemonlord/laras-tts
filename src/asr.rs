@@ -27,6 +27,8 @@ pub struct Asr {
     threads: usize,
     /// `None` = jendela penuh 30 s bawaan whisper.cpp.
     audio_ctx: Option<i32>,
+    /// Batas audio yang didengarkan (detik). `None` = seluruh take.
+    max_s: Option<f32>,
 }
 
 impl Asr {
@@ -48,16 +50,27 @@ impl Asr {
             .ok()
             .and_then(|v| v.parse::<i32>().ok())
             .filter(|v| *v >= 128);
+        let max_s = std::env::var("ASR_MAX_S")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+            .filter(|v| *v > 0.2);
         Ok(Self {
             state: Mutex::new(state),
             threads,
             audio_ctx,
+            max_s,
         })
     }
 
     /// Transkrip audio 24 kHz mono menjadi teks.
     pub fn transcribe(&self, audio: &[f32]) -> Result<String> {
-        let pcm = resample(audio);
+        let mut pcm = resample(audio);
+        if let Some(max) = self.max_s {
+            let n = (max * 16_000.0) as usize;
+            if pcm.len() > n {
+                pcm.truncate(n);
+            }
+        }
         let mut state = self
             .state
             .lock()
@@ -105,6 +118,104 @@ impl Asr {
     pub fn wer(&self, audio: &[f32], reference: &str) -> Result<f32> {
         let hyp = self.transcribe(audio)?;
         Ok(word_error_rate(reference, &hyp))
+    }
+
+    /// WER untuk beberapa take dalam SATU lintasan encoder.
+    ///
+    /// Whisper selalu menyandikan jendela penuh, jadi tiga take terpisah
+    /// berarti tiga kali kerja encoder — bagian termahal. Take digabung
+    /// dengan jeda senyap (ASR_GAP, bawaan 1,5 s) sehingga cukup satu lintasan; segmen
+    /// dipetakan balik ke take berdasarkan waktu mulai.
+    pub fn wer_banyak(&self, audios: &[&[f32]], rujukan: &str) -> Result<Vec<f32>> {
+        // Jeda antar take: whisper baru memecah segmen kalau senyapnya cukup
+        // panjang. 0,6 s ternyata masih digabung jadi satu segmen.
+        let jeda_s: f32 = std::env::var("ASR_GAP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1.5f32);
+        let jeda = (jeda_s * ASR_RATE as f32) as usize;
+
+        let mut gabung: Vec<f32> = Vec::new();
+        let mut batas: Vec<(usize, usize)> = Vec::with_capacity(audios.len());
+        for a in audios {
+            let mut pcm = resample(a);
+            if let Some(max) = self.max_s {
+                let n = (max * ASR_RATE as f32) as usize;
+                if pcm.len() > n {
+                    pcm.truncate(n);
+                }
+            }
+            let mulai = gabung.len();
+            gabung.extend_from_slice(&pcm);
+            batas.push((mulai, gabung.len()));
+            gabung.resize(gabung.len() + jeda, 0.0);
+        }
+
+        let teks = {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| anyhow!("state ASR terkunci"))?;
+            let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+            params.set_n_threads(self.threads.max(1) as i32);
+            params.set_language(Some("id"));
+            params.set_translate(false);
+            params.set_print_special(false);
+            params.set_print_progress(false);
+            params.set_print_realtime(false);
+            params.set_print_timestamps(false);
+            // Timestamp dibutuhkan untuk memetakan segmen ke take.
+            params.set_no_timestamps(false);
+            params.set_single_segment(false);
+            params.set_temperature(0.0);
+            params.set_temperature_inc(0.0);
+            params.set_max_tokens(448);
+            if let Some(ctx) = self.audio_ctx {
+                params.set_audio_ctx(ctx);
+            }
+            state
+                .full(params, &gabung)
+                .map_err(|e| anyhow!("inferensi ASR: {e}"))?;
+
+            let n = state
+                .full_n_segments()
+                .map_err(|e| anyhow!("segmen ASR: {e}"))?;
+            let debug = std::env::var("ASR_DEBUG").is_ok();
+            if debug {
+                eprintln!(
+                    "[asr] gabung {} take, {n} segmen, {:.1} s audio",
+                    audios.len(),
+                    gabung.len() as f32 / ASR_RATE as f32
+                );
+            }
+            let mut teks = vec![String::new(); audios.len()];
+            for i in 0..n {
+                let t0 = state.full_get_segment_t0(i).unwrap_or(0).max(0) as usize;
+                let sampel = t0 * (ASR_RATE / 100);
+                let idx = batas
+                    .iter()
+                    .position(|(m, s)| sampel >= *m && sampel < *s + jeda)
+                    .unwrap_or(0);
+                if debug {
+                    eprintln!("[asr] seg {i} t0={t0} -> take {idx}");
+                }
+                if let Ok(t) = state.full_get_segment_text(i) {
+                    teks[idx].push_str(&t);
+                    teks[idx].push(' ');
+                }
+            }
+            teks
+        };
+
+        // Kalau whisper menggabungkan semuanya jadi satu segmen, pemetaan
+        // gagal — jatuh kembali ke transkrip terpisah.
+        if teks.iter().any(|t| t.trim().is_empty()) {
+            if std::env::var("ASR_DEBUG").is_ok() {
+                eprintln!("[asr] pemetaan gagal, jatuh ke transkrip terpisah");
+            }
+            return audios.iter().map(|a| self.wer(a, rujukan)).collect();
+        }
+        Ok(teks.iter().map(|t| word_error_rate(rujukan, t)).collect())
     }
 }
 
