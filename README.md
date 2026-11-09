@@ -184,6 +184,7 @@ Waktu respons HTTP (4 vCPU, `takes=3`):
 | `LARAS_LANG` | `id` | profil bahasa (`src/lang/`) |
 | `REF_WAV` | `data/ref/suara.wav` | referensi suara default |
 | `TAKES` | `3` | jumlah take untuk best-of-N |
+| `CHUNK` | `1` | pecah teks per kalimat sebelum sintesis; `0` = satu lintasan |
 | `MODELS_DIR` | `data/onnx` | direktori graf ONNX (backend native) |
 | `ASR_MODEL` | _(kosong)_ | path `ggml-*.bin`; kalau diisi, take dipilih dengan WER ASR |
 | `ASR_CTX` | `0` (penuh 1500) | jendela encoder whisper; 768 ±2,2× lebih cepat |
@@ -202,7 +203,7 @@ Waktu respons HTTP (4 vCPU, `takes=3`):
 ```
 klien ──HTTP──> laras (Rust/axum)
                   │ 1. profil bahasa: normalisasi + perbaikan fonem
-                  │ 2. cache sha256(teks|voice|takes)
+                  │ 2. pecah per kalimat (CHUNK), cache sha256(teks|voice|takes)
                   │ 3. serialisasi ke satu worker
                   ▼
                worker.py (Python, model tetap di RAM)

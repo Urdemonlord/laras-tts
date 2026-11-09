@@ -119,6 +119,8 @@ struct Synth {
     dur: f64,
     wer: Option<f64>,
     take: Option<usize>,
+    /// Jumlah potongan kalimat (>1 kalau teks dipecah).
+    chunks: Option<usize>,
 }
 
 impl Backend {
@@ -142,6 +144,7 @@ impl Backend {
                     dur,
                     wer: None,
                     take: Some(take),
+                    chunks: None,
                 })
             }
             #[cfg(not(feature = "onnx"))]
@@ -152,6 +155,7 @@ impl Backend {
                     dur: dur.unwrap_or(0.0),
                     wer,
                     take: None,
+                    chunks: None,
                 })
             }
         }
@@ -180,6 +184,8 @@ struct AppState {
     cache_dir: PathBuf,
     ref_wav: String,
     takes: u32,
+    /// Pecah teks per kalimat sebelum sintesis (CHUNK=0 mematikan).
+    chunk: bool,
     lang: &'static dyn lang::Lang,
 }
 
@@ -208,6 +214,9 @@ fn wav_response(bytes: Vec<u8>, cached: bool, s: Option<&Synth>) -> Response {
         }
         if let Some(t) = s.take {
             b = b.header("x-take", t.to_string());
+        }
+        if let Some(c) = s.chunks {
+            b = b.header("x-chunks", c.to_string());
         }
     }
     b.body(axum::body::Body::from(bytes)).unwrap()
@@ -246,9 +255,26 @@ async fn health(State(st): State<Arc<AppState>>) -> Response {
         "lang": st.lang.code(),
         "default_voice": st.ref_wav,
         "takes": st.takes,
+        "chunk": st.chunk,
         "cache_dir": st.cache_dir.to_string_lossy(),
     }))
     .into_response()
+}
+
+/// Sambung beberapa wav jadi satu, dengan jeda pendek antar kalimat.
+#[cfg(feature = "onnx")]
+fn gabung_wav(bagian: &[PathBuf], out: &std::path::Path) -> Result<(), String> {
+    use laras::onnx::wav;
+    let jeda = vec![0.0f32; (0.15 * 24_000.0) as usize];
+    let mut semua: Vec<f32> = Vec::new();
+    for (i, p) in bagian.iter().enumerate() {
+        let s = wav::read_mono(p).map_err(|e| format!("baca potongan: {e:#}"))?;
+        if i > 0 {
+            semua.extend_from_slice(&jeda);
+        }
+        semua.extend_from_slice(&s);
+    }
+    wav::write_mono(out, &semua).map_err(|e| format!("tulis gabungan: {e:#}"))
 }
 
 async fn tts(State(st): State<Arc<AppState>>, Json(req): Json<TtsReq>) -> Response {
@@ -276,7 +302,59 @@ async fn tts(State(st): State<Arc<AppState>>, Json(req): Json<TtsReq>) -> Respon
             .backend
             .lock()
             .map_err(|_| "backend poison".to_string())?;
-        backend.synth(&key2, &text2, &ref2, takes, &out)
+
+        #[cfg(feature = "onnx")]
+        let potongan: Vec<String> = if st2.chunk {
+            lang::potong_kalimat(&text2)
+        } else {
+            Vec::new()
+        };
+        #[cfg(not(feature = "onnx"))]
+        let potongan: Vec<String> = Vec::new();
+
+        if potongan.len() <= 1 {
+            return backend.synth(&key2, &text2, &ref2, takes, &out);
+        }
+
+        // Banyak kalimat: sintesis satu per satu lalu disambung. Model kecil
+        // sering tidak berhenti di titik pada paragraf panjang dan mengulang
+        // kata di ujung; memecahnya menghilangkan itu.
+        #[cfg(feature = "onnx")]
+        {
+            let mut bagian: Vec<PathBuf> = Vec::with_capacity(potongan.len());
+            let mut total = 0.0;
+            for (i, k) in potongan.iter().enumerate() {
+                let tmp = st2.cache_dir.join(format!("{key2}.p{i}.wav"));
+                match backend.synth(&format!("{key2}-{i}"), k, &ref2, takes, &tmp) {
+                    Ok(s) => {
+                        total += s.dur;
+                        bagian.push(tmp);
+                    }
+                    Err(e) => {
+                        for p in &bagian {
+                            let _ = std::fs::remove_file(p);
+                        }
+                        return Err(e);
+                    }
+                }
+            }
+            let hasil = gabung_wav(&bagian, &out);
+            for p in &bagian {
+                let _ = std::fs::remove_file(p);
+            }
+            hasil?;
+            Ok(Synth {
+                dur: total,
+                wer: None,
+                take: None,
+                chunks: Some(potongan.len()),
+            })
+        }
+        // Tanpa fitur `onnx` tidak ada cara menyambung wav: satu lintasan saja.
+        #[cfg(not(feature = "onnx"))]
+        {
+            unreachable!("potongan kosong tanpa fitur onnx")
+        }
     })
     .await;
 
@@ -318,6 +396,7 @@ async fn main() {
     std::fs::create_dir_all(&cache_dir).expect("cache dir");
     let ref_wav = env_or("REF_WAV", "data/ref/suara.wav");
     let takes: u32 = env_or("TAKES", "3").parse().unwrap_or(3);
+    let chunk = env_or("CHUNK", "1") != "0";
     // 0 = pakai semua inti yang tersedia.
     let threads: usize = env_or("THREADS", "0").parse::<usize>().unwrap_or(0);
 
@@ -401,6 +480,7 @@ async fn main() {
     let state = Arc::new(AppState {
         backend: Mutex::new(backend),
         cache_dir,
+        chunk,
         ref_wav,
         takes,
         lang: bahasa,

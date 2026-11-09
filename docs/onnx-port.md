@@ -202,6 +202,27 @@ terpisah — lambat tapi benar.
 `ASR_CTX=512` diuji 27 kalimat: WER 0,117 vs 0,099 pada subset yang sama,
 jadi lebih buruk dan hanya menghemat ±1,7 s. Bawaan tetap 768.
 
+### Paragraf panjang dipecah per kalimat
+
+Pada teks satu paragraf, model kadang tidak menemukan titik henti dan
+mengulang kata di ujung ("...tidak pernah ter-ter-ter"). Perbaikannya bukan di
+pemilih take, tapi di pemotongan teks: `CHUNK=1` (bawaan) memecah masukan di
+`.`, `!`, `?`, atau baris baru, menyintesis tiap kalimat, lalu menyambungnya
+dengan jeda 150 ms. Kalimat yang lebih dari 28 kata dipecah lagi di koma, dan
+potongan di bawah 4 kata digabung ke kalimat sebelumnya.
+
+Paragraf uji yang sama:
+
+| Masukan | Transkrip whisper |
+|---|---|
+| satu lintasan, satu take | "...seperti biasa, ya percaya bahwa rezeki tidak perc**ator-ter-ter-ter**..." |
+| satu lintasan, tiga take + ASR | "...seperti biasa ya percaya barasik **ITT**." |
+| **dipecah per kalimat** | "...seperti biasa. Ya percaya bahwa rezeki **tidak pernah tertukar**." |
+
+Biayanya: satu lintasan model per kalimat (bukan per karakter), jadi paragraf
+3 kalimat menjadi 3 lintasan pendek — totalnya justru lebih cepat daripada satu
+lintasan panjang yang terus memancarkan token sampai batas konteks.
+
 ### Pemakaian
 
 ```bash
