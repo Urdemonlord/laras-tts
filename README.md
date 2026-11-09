@@ -193,6 +193,7 @@ Waktu respons HTTP (4 vCPU, `takes=3`):
 | `ASR_MODEL` | _(kosong)_ | path `ggml-*.bin`; kalau diisi, take dipilih dengan WER ASR |
 | `ASR_CTX` | `0` (penuh 1500) | jendela encoder whisper; 768 ±2,2× lebih cepat |
 | `ASR_THREADS` | `1` | thread whisper; di 4 vCPU 1 thread justru tercepat |
+| `ASR_ACCEPT` | `0.15` | ambang WER untuk berhenti di take pertama; negatif = selalu `TAKES` take |
 | `USE_ASR` | `1` | `0` = matikan skoring WER di backend `worker.py` |
 | `CACHE_DIR` | `data/cache` | cache WAV |
 | `WORKER_PY` | `python3` | interpreter worker |
@@ -201,6 +202,31 @@ Waktu respons HTTP (4 vCPU, `takes=3`):
 | `EOS` | `-3.0` | ambang EOS model |
 | `REF_MAX_S` | `15` | batas potong referensi (detik) |
 | `HF_HOME` | `data/hf` | cache bobot model |
+
+## Latensi
+
+Biaya terbesar bukan sintesis, tapi mendengarkan hasilnya: whisper.cpp `small`
+dengan jendela encoder 768 memakan **±3,5–4 s per take** di 4 vCPU, sementara
+satu take hanya ±1,2 s. Karena itu gateway berhenti lebih awal: take pertama
+disintesis, didengarkan, dan kalau WER-nya sudah di bawah `ASR_ACCEPT` (bawaan
+0,15) sisa take tidak dibuat.
+
+Diukur pada 20 kalimat Tatoeba, satu permintaan per kalimat, cache kosong:
+
+| Jalur | Waktu | WER | Porsi |
+|---|---|---|---|
+| `TAKES=1` (tanpa ASR sama sekali) | **1,1 s** | 0,190 | – |
+| adaptif, take pertama lolos | **4,3–4,8 s** | 0,168 | ±35% |
+| adaptif, lanjut 2–3 take | 10,0–17,4 s | 0,168 | ±65% |
+| selalu 3 take + ASR | 14,5 s | 0,163 | – |
+
+Rata-rata adaptif **10,8 s**, dari sebelumnya 14,5 s. Kualitasnya setara:
+pada 28 kalimat yang sama, adaptif 0,168 vs selalu-tiga-take 0,163 — selisih
++0,004 dengan 27 dari 28 kalimat identik.
+
+Batas bawahnya jelas: satu panggilan ASR ±4 s, jadi selama pemilihan memakai
+whisper `small` pada jendela 768, rata-rata tidak akan turun jauh di bawah 5 s
+tanpa mengganti model ASR-nya.
 
 ## Level audio
 

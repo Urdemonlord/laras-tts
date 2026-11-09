@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use crate::lang::{self, Lang};
 use anyhow::{Context, Result};
-use laras::onnx::{wav, Engine, Params};
+use laras::onnx::{wav, Best, Diag, Engine, Params};
 
 #[cfg(feature = "asr")]
 use crate::asr::Asr;
@@ -30,6 +30,8 @@ pub struct Native {
     lang: &'static dyn Lang,
     #[cfg(feature = "asr")]
     asr: Option<Asr>,
+    /// Ambang WER untuk berhenti lebih awal (ASR_ACCEPT); 0 = selalu `takes`.
+    asr_accept: f32,
 }
 
 impl Native {
@@ -53,6 +55,10 @@ impl Native {
             lang,
             #[cfg(feature = "asr")]
             asr,
+            asr_accept: std::env::var("ASR_ACCEPT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.15),
         })
     }
 
@@ -108,47 +114,80 @@ impl Native {
         out: &Path,
     ) -> Result<(f64, usize, f32)> {
         self.use_voice(ref_wav)?;
-        let best = self
-            .engine
-            .synthesize_best(text, &self.params, takes, None)?;
+        let t0 = std::time::Instant::now();
 
-        // Teks ternormalisasi dipakai dua-duanya: sebagai rujukan WER (kalau
-        // ASR aktif) dan sebagai hitungan kata untuk skor diagnostik.
+        // Teks ternormalisasi dipakai dua-duanya: rujukan WER dan hitungan kata.
         let rujukan = self.lang.prepare(text);
         let kata = rujukan.split_whitespace().count();
 
-        // Pemilihan: kalau ASR tersedia, dengarkan tiap take dan ambil WER
-        // terendah. Kalau tidak, pakai pilihan medoid bawaan mesin.
-        #[cfg(feature = "asr")]
-        let (audio, index, skor) = match &self.asr {
-            Some(asr) if best.cands.len() > 1 => {
-                let audios: Vec<&[f32]> = best.cands.iter().map(|(_, a, _)| a.as_slice()).collect();
-                let (pilih, terbaik) = match asr.wer_banyak(&audios, &rujukan) {
-                    Ok(skor) => {
-                        let (i, w) = skor.iter().enumerate().fold(
-                            (best.index, f32::INFINITY),
-                            |(bi, bw), (i, w)| {
-                                if *w < bw {
-                                    (i, *w)
-                                } else {
-                                    (bi, bw)
-                                }
-                            },
-                        );
-                        (i, w)
-                    }
-                    Err(_) => (best.index, best.diag().score(kata)),
-                };
-                (best.cands[pilih].1.as_slice(), pilih, terbaik)
-            }
-            _ => (best.audio(), best.index, best.diag().score(kata)),
-        };
+        // Pemilihan adaptif: satu take dulu, didengarkan; kalau WER-nya sudah
+        // di bawah `ASR_ACCEPT`, sisa take tidak perlu dibuat. Kalau tidak,
+        // take berikutnya ditambah satu per satu sampai batas `takes`.
+        let n_maks = takes.max(1);
+        let mut cands: Vec<(Diag, Vec<f32>, Vec<f32>)> = Vec::with_capacity(n_maks);
+        let mut skor: Vec<Option<f32>> = Vec::with_capacity(n_maks);
+        let mut t_synth = 0.0f32;
 
-        #[cfg(not(feature = "asr"))]
-        let (audio, index, skor) = (best.audio(), best.index, best.diag().score(kata));
+        for k in 0..n_maks {
+            let t = std::time::Instant::now();
+            let c = self.engine.synthesize_kth(text, &self.params, k, None)?;
+            t_synth += t.elapsed().as_secs_f32();
+            // Satu take tidak ada yang bisa dipilih: ASR hanya membuang waktu.
+            #[cfg(feature = "asr")]
+            let w = match &self.asr {
+                Some(asr) if n_maks > 1 => asr.wer(&c.1, &rujukan).ok(),
+                _ => None,
+            };
+            #[cfg(not(feature = "asr"))]
+            let w: Option<f32> = None;
+
+            if std::env::var("LARAS_TRACE").is_ok() {
+                if let Some(w) = w {
+                    eprintln!("[asr] take {k}: WER {w:.3}");
+                }
+            }
+            cands.push(c);
+            skor.push(w);
+            // `ASR_ACCEPT` negatif = jangan berhenti awal (selalu `takes` take).
+            if let Some(w) = w {
+                if self.asr_accept >= 0.0 && w <= self.asr_accept {
+                    break;
+                }
+            }
+        }
+
+        let index = if skor.iter().all(|s| s.is_some()) && !skor.is_empty() {
+            let nilai: Vec<f32> = skor.iter().map(|s| s.unwrap_or(f32::INFINITY)).collect();
+            nilai
+                .iter()
+                .enumerate()
+                .fold(0usize, |bi, (i, w)| if *w < nilai[bi] { i } else { bi })
+        } else {
+            // Tanpa skor ASR, pakai medoid latent seperti bawaan mesin.
+            laras::onnx::medoid_index(&cands)
+        };
+        let best = Best { index, cands };
+        let dipakai = best.cands.len();
+
+        let skor_akhir = skor
+            .get(index)
+            .copied()
+            .flatten()
+            .unwrap_or_else(|| best.diag().score(kata));
+        let audio = best.audio();
+
+        if std::env::var("LARAS_TRACE").is_ok() {
+            eprintln!(
+                "[waktu] synth {:.0} ms ({} take) + asr {:.0} ms = {:.0} ms",
+                t_synth * 1000.0,
+                dipakai,
+                (t0.elapsed().as_secs_f32() - t_synth).max(0.0) * 1000.0,
+                t0.elapsed().as_secs_f32() * 1000.0
+            );
+        }
 
         wav::write_mono(out, audio)?;
         let dur = audio.len() as f64 / wav::SAMPLE_RATE as f64;
-        Ok((dur, index, skor))
+        Ok((dur, index, skor_akhir))
     }
 }

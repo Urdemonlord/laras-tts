@@ -37,14 +37,17 @@ fn main() -> Result<()> {
     let mut state = ctx.create_state().map_err(|e| anyhow::anyhow!("{e}"))?;
 
     // (nama, thread, no_ts, satu_segmen, maks_token, temp_inc, audio_ctx)
+    // Audio pendek (±2 s) butuh jauh lebih sedikit jendela encoder daripada
+    // 1500 frame bawaan; sapuan ini mencari titik termurah yang masih benar.
     let skenario: Vec<(&str, i32, bool, bool, i32, f32, i32)> = vec![
-        ("ctx 1500, 1 thread", 1, true, true, 64, 0.0, 0),
-        ("ctx 1500, 4 thread", 4, true, true, 64, 0.0, 0),
-        ("ctx 768, 4 thread", 4, true, true, 64, 0.0, 768),
-        ("ctx 768, 1 thread", 1, true, true, 64, 0.0, 768),
-        ("ctx 512, 4 thread", 4, true, true, 64, 0.0, 512),
-        ("ctx 384, 4 thread", 4, true, true, 64, 0.0, 384),
-        ("ctx 512, 1 thread", 1, true, true, 64, 0.0, 512),
+        ("ctx 768, 1 thread", 1, true, true, 128, 0.0, 768),
+        ("ctx 512, 1 thread", 1, true, true, 128, 0.0, 512),
+        ("ctx 384, 1 thread", 1, true, true, 128, 0.0, 384),
+        ("ctx 320, 1 thread", 1, true, true, 128, 0.0, 320),
+        ("ctx 256, 1 thread", 1, true, true, 128, 0.0, 256),
+        ("ctx 192, 1 thread", 1, true, true, 128, 0.0, 192),
+        ("ctx 768, 2 thread", 2, true, true, 128, 0.0, 768),
+        ("ctx 320, 2 thread", 2, true, true, 128, 0.0, 320),
     ];
 
     for (nama, threads, no_ts, satu, maks, tinc, actx) in skenario {

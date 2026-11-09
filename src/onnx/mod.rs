@@ -692,6 +692,32 @@ impl Engine {
     ///
     /// Seed naik per take (seed, seed+1, ...), jadi hasilnya deterministik
     /// untuk kombinasi teks + seed yang sama.
+    /// Sintesis satu kandidat ke-`k` (seed naik per k). Dipakai pemilihan
+    /// adaptif: take berikutnya baru dibuat kalau yang sekarang belum lolos.
+    pub fn synthesize_kth(
+        &mut self,
+        text: &str,
+        params: &Params,
+        k: usize,
+        noise: Option<&[f32]>,
+    ) -> Result<(Diag, Vec<f32>, Vec<f32>)> {
+        let mut p = *params;
+        p.seed = params.seed.wrapping_add(k as u64);
+        let (audio, diag, lat) = self.synthesize(text, &p, noise)?;
+        if std::env::var("LARAS_TRACE").is_ok() {
+            let words = text.split_whitespace().count();
+            eprintln!(
+                "[laras] take {k}: skor {:+.2} | {} frame | eos {:?} ({:+.2}) | {:.2}s",
+                diag.score(words),
+                diag.frames,
+                diag.eos_frame,
+                diag.eos_conf,
+                diag.dur
+            );
+        }
+        Ok((diag, audio, lat))
+    }
+
     pub fn synthesize_best(
         &mut self,
         text: &str,
@@ -773,7 +799,7 @@ fn cosine_dist(a: &[f32], b: &[f32]) -> f32 {
 }
 
 /// Indeks take yang paling dekat ke pusat kandidat (medoid kosinus).
-fn medoid_index(cands: &[(Diag, Vec<f32>, Vec<f32>)]) -> usize {
+pub fn medoid_index(cands: &[(Diag, Vec<f32>, Vec<f32>)]) -> usize {
     if cands.len() <= 1 {
         return 0;
     }

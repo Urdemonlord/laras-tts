@@ -202,6 +202,32 @@ terpisah — lambat tapi benar.
 `ASR_CTX=512` diuji 27 kalimat: WER 0,117 vs 0,099 pada subset yang sama,
 jadi lebih buruk dan hanya menghemat ±1,7 s. Bawaan tetap 768.
 
+### Berhenti lebih awal kalau take pertama sudah bagus
+
+Mendengarkan lebih mahal daripada berbicara: satu take ±1,2 s, satu panggilan
+whisper `small` (jendela 768, 1 thread) ±3,5–4 s. Menyintesis tiga take lalu
+mendengarkan ketiganya berarti ±14,5 s untuk satu kalimat.
+
+Karena teks aslinya diketahui, WER tiap take bisa dihitung terhadap rujukan —
+jadi take berikutnya hanya perlu dibuat kalau yang sekarang belum memenuhi
+ambang. `ASR_ACCEPT` (bawaan 0,15) adalah ambang itu; nilai negatif
+mengembalikan perilaku lama (selalu `TAKES` take).
+
+Pada 28 kalimat Tatoeba yang sama, dengan juri faster-whisper terpisah:
+
+| Cara | WER | Waktu rata-rata |
+|---|---|---|
+| take pertama saja | 0,190 | 1,1 s |
+| adaptif (`ASR_ACCEPT=0.15`) | 0,168 | 10,8 s |
+| selalu 3 take | 0,163 | 14,5 s |
+
+Adaptif vs selalu-3-take: **+0,004**, 27 dari 28 kalimat memilih audio yang
+sama persis. Vs take pertama: **−0,022** (CI95 [−0,064, +0,005]).
+
+Satu detail yang mudah salah: `TAKES=1` tidak memanggil ASR sama sekali. Dulu
+satu take tetap didengarkan untuk skor, padahal tidak ada yang bisa dipilih —
+membuang ±4 s per permintaan. Sekarang jalur itu 1,1 s.
+
 ### Paragraf panjang dipecah per kalimat
 
 Pada teks satu paragraf, model kadang tidak menemukan titik henti dan
