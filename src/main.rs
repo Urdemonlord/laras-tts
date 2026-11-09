@@ -121,6 +121,8 @@ struct Synth {
     take: Option<usize>,
     /// Jumlah potongan kalimat (>1 kalau teks dipecah).
     chunks: Option<usize>,
+    /// Jumlah take yang benar-benar dipakai.
+    takes: Option<u32>,
 }
 
 impl Backend {
@@ -145,6 +147,7 @@ impl Backend {
                     wer: None,
                     take: Some(take),
                     chunks: None,
+                    takes: Some(takes),
                 })
             }
             #[cfg(not(feature = "onnx"))]
@@ -156,6 +159,7 @@ impl Backend {
                     wer,
                     take: None,
                     chunks: None,
+                    takes: Some(takes),
                 })
             }
         }
@@ -186,6 +190,10 @@ struct AppState {
     takes: u32,
     /// Pecah teks per kalimat sebelum sintesis (CHUNK=0 mematikan).
     chunk: bool,
+    /// Jumlah take per kalimat saat teks dipecah (CHUNK_TAKES).
+    chunk_takes: u32,
+    /// Di bawah jumlah kata ini, teks tidak dipecah (CHUNK_MIN_WORDS).
+    chunk_min_words: usize,
     lang: &'static dyn lang::Lang,
 }
 
@@ -217,6 +225,9 @@ fn wav_response(bytes: Vec<u8>, cached: bool, s: Option<&Synth>) -> Response {
         }
         if let Some(c) = s.chunks {
             b = b.header("x-chunks", c.to_string());
+        }
+        if let Some(t) = s.takes {
+            b = b.header("x-takes", t.to_string());
         }
     }
     b.body(axum::body::Body::from(bytes)).unwrap()
@@ -256,6 +267,8 @@ async fn health(State(st): State<Arc<AppState>>) -> Response {
         "default_voice": st.ref_wav,
         "takes": st.takes,
         "chunk": st.chunk,
+        "chunk_takes": st.chunk_takes,
+        "chunk_min_words": st.chunk_min_words,
         "cache_dir": st.cache_dir.to_string_lossy(),
     }))
     .into_response()
@@ -283,7 +296,29 @@ async fn tts(State(st): State<Arc<AppState>>, Json(req): Json<TtsReq>) -> Respon
         return (StatusCode::BAD_REQUEST, "teks kosong").into_response();
     }
     let ref_wav = req.voice.unwrap_or_else(|| st.ref_wav.clone());
-    let takes = req.takes.unwrap_or(st.takes).clamp(1, 8);
+    let takes_diminta = req.takes.unwrap_or(st.takes).clamp(1, 8);
+
+    // Teks pendek tidak dipecah: satu lintasan dengan best-of-N + seleksi ASR
+    // masih murah, dan pemecahan justru mematikan seleksi.
+    #[cfg(feature = "onnx")]
+    let kata = text.split_whitespace().count();
+    #[cfg(feature = "onnx")]
+    let potongan: Vec<String> = if st.chunk && kata > st.chunk_min_words {
+        lang::potong_kalimat(&text)
+    } else {
+        Vec::new()
+    };
+    #[cfg(not(feature = "onnx"))]
+    let potongan: Vec<String> = Vec::new();
+
+    // Teks yang dipecah memakai jatah take sendiri: seleksi ASR per kalimat
+    // membuat paragraf tiga kalimat jadi ~75 s, dan tiap kalimat pendek sudah
+    // cukup bagus dengan satu take.
+    let takes = if potongan.len() > 1 {
+        st.chunk_takes.clamp(1, 8)
+    } else {
+        takes_diminta
+    };
     let key = hash_key(&format!("{text}|{ref_wav}|{takes}"));
     let cached_path = st.cache_dir.join(format!("{key}.wav"));
 
@@ -302,15 +337,6 @@ async fn tts(State(st): State<Arc<AppState>>, Json(req): Json<TtsReq>) -> Respon
             .backend
             .lock()
             .map_err(|_| "backend poison".to_string())?;
-
-        #[cfg(feature = "onnx")]
-        let potongan: Vec<String> = if st2.chunk {
-            lang::potong_kalimat(&text2)
-        } else {
-            Vec::new()
-        };
-        #[cfg(not(feature = "onnx"))]
-        let potongan: Vec<String> = Vec::new();
 
         if potongan.len() <= 1 {
             return backend.synth(&key2, &text2, &ref2, takes, &out);
@@ -348,6 +374,7 @@ async fn tts(State(st): State<Arc<AppState>>, Json(req): Json<TtsReq>) -> Respon
                 wer: None,
                 take: None,
                 chunks: Some(potongan.len()),
+                takes: Some(takes),
             })
         }
         // Tanpa fitur `onnx` tidak ada cara menyambung wav: satu lintasan saja.
@@ -397,6 +424,8 @@ async fn main() {
     let ref_wav = env_or("REF_WAV", "data/ref/suara.wav");
     let takes: u32 = env_or("TAKES", "3").parse().unwrap_or(3);
     let chunk = env_or("CHUNK", "1") != "0";
+    let chunk_takes: u32 = env_or("CHUNK_TAKES", "1").parse().unwrap_or(1);
+    let chunk_min_words: usize = env_or("CHUNK_MIN_WORDS", "20").parse().unwrap_or(20);
     // 0 = pakai semua inti yang tersedia.
     let threads: usize = env_or("THREADS", "0").parse::<usize>().unwrap_or(0);
 
@@ -481,6 +510,8 @@ async fn main() {
         backend: Mutex::new(backend),
         cache_dir,
         chunk,
+        chunk_takes,
+        chunk_min_words,
         ref_wav,
         takes,
         lang: bahasa,

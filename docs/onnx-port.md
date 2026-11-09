@@ -223,6 +223,21 @@ Biayanya: satu lintasan model per kalimat (bukan per karakter), jadi paragraf
 3 kalimat menjadi 3 lintasan pendek — totalnya justru lebih cepat daripada satu
 lintasan panjang yang terus memancarkan token sampai batas konteks.
 
+### Aturan otomatis: pendek pakai seleksi, panjang pakai potong
+
+Dua-duanya tidak bisa dipakai bersamaan dengan murah: seleksi ASR per kalimat
+membuat paragraf tiga kalimat jadi ±75 s. Jadi pembagiannya otomatis:
+
+| Panjang teks | Yang terjadi | Contoh waktu (4 vCPU) |
+|---|---|---|
+| ≤ 20 kata (`CHUNK_MIN_WORDS`) | satu lintasan, `TAKES` take, dipilih ASR | 6 kata: ±25 s (permintaan pertama, termasuk pemanasan whisper) |
+| > 20 kata | dipecah per kalimat, `CHUNK_TAKES=1` take, tanpa seleksi | 25 kata / 3 kalimat: ±4 s |
+
+Ambang 20 kata dipilih karena pengulangan di ujung baru muncul pada paragraf
+(25 kata ke atas), sementara teks pendek lebih diuntungkan seleksi take.
+Respons membawa header `x-chunks` dan `x-takes` supaya pemanggil tahu jalur
+mana yang dipakai; `CHUNK=0` memaksa satu lintasan untuk semuanya.
+
 ### Pemakaian
 
 ```bash
