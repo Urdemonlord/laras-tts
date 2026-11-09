@@ -36,6 +36,20 @@ Hasil terukur pada **394 kalimat** (Tatoeba, temp 0,10, satu take):
 **0,80–0,89** (Resemblyzer), tanpa GPU. Angka 0,00–0,08 yang beredar di
 versi awal README berasal dari 12 kalimat pilihan — jangan dipakai.
 
+Pemilihan take berbasis ASR memang menolong, walau tidak gratis. Pada 60
+kalimat berpasangan (3 take, temp 0,10):
+
+| | WER | kalimat bersih |
+|---|---|---|
+| take pertama (tanpa seleksi) | 0,143 | 53% |
+| **dipilih ASR** | **0,108** | **63%** |
+| oracle (batas atas, 3 take) | 0,098 | – |
+
+Selisih berpasangan **−0,035, CI95 [−0,070, −0,001]**; menang 18%, kalah 3%,
+seri 78%. Artinya selektor mengambil hampir seluruh keuntungan yang tersedia
+(0,108 vs batas 0,098). Ongkosnya: ±13 s tambahan per permintaan di 4 vCPU,
+jadi fitur ini untuk batch, bukan pratonton.
+
 ## Posisi proyek
 
 **Produk: Bahasa Indonesia dulu. Arsitektur: tidak dikunci ke satu bahasa.**
@@ -152,7 +166,8 @@ Waktu respons HTTP (4 vCPU, `takes=3`):
 | Jam + desimal + kode ruang | 3 | 11,0 s | 5,96 s | 0,16 |
 
 `takes=1` ±3,6× lebih cepat tapi WER naik 3×. Pakai 1 take untuk pratinjau,
-3 take untuk hasil final.
+3 take untuk hasil final. Menyalakan `ASR_MODEL` menambah ±13 s (3 take) di
+4 vCPU — lihat bagian pemilih take di `docs/onnx-port.md`.
 
 ## Konfigurasi
 

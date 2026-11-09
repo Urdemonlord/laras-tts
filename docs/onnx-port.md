@@ -152,6 +152,25 @@ Karena itu `ASR_CTX=768` + `ASR_THREADS=1` jadi titik seimbang: ±4,4 s per
 take, akurasi transkrip utuh. Untuk `takes=3` artinya ±13 s tambahan per
 permintaan — hanya layak untuk batch, bukan pratonton interaktif.
 
+### Hasil
+
+60 kalimat berpasangan (Tatoeba, temp 0,10, `takes=3`, evaluasi WER memakai
+faster-whisper `small` int8 di luar proses):
+
+| Pemilih | WER | bersih |
+|---|---|---|
+| take pertama | 0,143 | 53% |
+| **ASR (`small`, ctx 768)** | **0,108** | **63%** |
+| oracle (terbaik dari 3 take) | 0,098 | – |
+
+Selisih berpasangan −0,035 dengan CI95 [−0,070, −0,001]; menang 18% / kalah
+3% / seri 78%. Selektor mengambil hampir seluruh celah ke oracle.
+
+Satu kejujuran metodologis: penilai dan pemilih sama-sama keluarga
+whisper-small, jadi WER absolutnya optimistis. Yang bisa dipercaya adalah
+selisih berpasangannya, karena kedua sisi diukur dengan alat yang sama pada
+teks yang sama.
+
 ### Pemakaian
 
 ```bash
