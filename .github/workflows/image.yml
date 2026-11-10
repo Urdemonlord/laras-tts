@@ -89,7 +89,7 @@ jobs:
           docker run --rm --entrypoint sh "$REF" -c '
             ldd /usr/local/bin/laras
             echo "glibc runtime: $(ldd --version | head -1)"
-            echo "glibc diminta binary: $(strings /usr/local/bin/laras | grep -oE "GLIBC_2\.[0-9]+" | sort -uV | tail -1)"
+            echo "glibc diminta binary: $(grep -aoE 'GLIBC_2\.[0-9]+' /usr/local/bin/laras | sort -uV | tail -1)"
             ! ldd /usr/local/bin/laras | grep -q "not found"
           '
 
