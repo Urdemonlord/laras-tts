@@ -78,7 +78,9 @@ jobs:
             REF="$(printf '%s\n' "$TAGS" | head -n1)"
           else
             # Verifikasi artefak yang benar-benar sudah di-push, bukan build lokal.
-            REF="$IMAGE@$DIGEST"
+            # `github.repository` bisa mengandung huruf besar; referensi image wajib lowercase.
+            IMG="$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')"
+            REF="$IMG@$DIGEST"
             docker pull "$REF" > /dev/null
           fi
           echo "image: $REF"
