@@ -99,10 +99,29 @@ curl -X POST localhost:8080/tts -H 'content-type: application/json' \
 
 Contoh lengkap: [`examples/curl.sh`](examples/curl.sh).
 
+## Pakai image Docker
+
+Image publik, dibangun di CI (bukan di mesin-mesinmu):
+
+```bash
+docker run --rm -p 8080:8080 \
+  -v "$PWD/data:/data" \
+  ghcr.io/urdemonlord/laras-tts:0.1.0
+```
+
+Image hanya berisi satu binary native (ONNX Runtime ter-link statis, tanpa
+Python). Yang perlu disediakan di volume `/data`: graf ONNX di
+`/data/models` dan rekaman referensi di `/data/ref/suara.wav` — lihat tabel
+[Konfigurasi](#konfigurasi). Tanpa keduanya proses berhenti dengan
+`gagal memuat model ONNX`.
+
+Base image `debian:trixie-slim` dipilih karena binary menuntut `GLIBC_2.38`;
+di bookworm (glibc 2.36) binary tidak bisa di-link sama sekali.
+
 ## Instalasi manual
 
-Butuh Rust ≥ 1.75, Python ≥ 3.10, ±2,5 GB RAM (model 438 MB + Whisper-small
-untuk skoring).
+Butuh Rust ≥ 1.92 (dipaksa `ort 2.0.0-rc.15`), Python ≥ 3.10, ±2,5 GB RAM
+(model 438 MB + Whisper-small untuk skoring).
 
 ```bash
 python3 -m venv venv && . venv/bin/activate
