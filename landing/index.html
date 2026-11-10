@@ -106,6 +106,28 @@
   .fitur p { margin: 0; color: var(--redup); font-size: .9rem; }
   @media (max-width: 860px) { .fitur { grid-template-columns: 1fr; } }
 
+  /* -------------------------------------------------------------- unduh */
+  .unduh { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; align-items: start; }
+  .unduh-utama {
+    background: var(--bg2); border: 1px solid var(--garis); border-radius: 14px; padding: 26px;
+  }
+  .unduh-utama h3 { margin: 0 0 6px; font-size: 1.15rem; letter-spacing: -.01em; }
+  .unduh-utama p { margin: 0 0 20px; color: var(--redup); font-size: .92rem; }
+  .unduh-utama .tombol a.utama { font-size: 1rem; padding: 13px 24px; }
+  .meta { display: flex; gap: 8px 16px; flex-wrap: wrap; margin-top: 16px; color: var(--redup); font-size: .78rem; }
+  .meta code { background: #131922; padding: 2px 6px; border-radius: 4px; font-size: .74rem; }
+  .langkah { margin: 20px 0 0; padding-left: 20px; color: var(--redup); font-size: .88rem; }
+  .langkah li { margin-bottom: 7px; }
+  .langkah strong { color: var(--teks); font-weight: 600; }
+  .unduh-lain { display: grid; gap: 14px; }
+  .unduh-lain > div {
+    background: var(--bg2); border: 1px solid var(--garis); border-radius: 12px; padding: 18px 20px;
+  }
+  .unduh-lain h4 { margin: 0 0 6px; font-size: .95rem; }
+  .unduh-lain p { margin: 0; color: var(--redup); font-size: .86rem; }
+  .unduh-lain a { font-size: .86rem; }
+  @media (max-width: 860px) { .unduh { grid-template-columns: 1fr; } }
+
   /* -------------------------------------------------------------- kode */
   .blok-kode { position: relative; margin: 0 0 18px; }
   .blok-kode pre {
@@ -145,6 +167,7 @@
   <div class="bungkus">
     <span class="merek">Laras<span>.</span></span>
     <div class="tautan">
+      <a href="#unduh">Unduh</a>
       <a href="#dengar">Dengar</a>
       <a href="#pasang">Pasang</a>
       <a href="#api">API</a>
@@ -164,7 +187,8 @@
       VPS 2 vCPU, atau Raspberry Pi.
     </p>
     <div class="tombol">
-      <a class="utama" href="#pasang">Coba sekarang</a>
+      <a class="utama" href="#unduh">Unduh .exe — Windows</a>
+      <a href="#pasang">Pasang via Docker</a>
       <a href="https://github.com/Urdemonlord/laras-tts">Lihat kode</a>
     </div>
 
@@ -176,6 +200,61 @@
     </div>
   </div>
 </header>
+
+<section id="unduh">
+  <div class="bungkus">
+    <h2>Unduh</h2>
+    <p class="kepala-bagian">
+      Satu paket, langsung jalan: aplikasi, mesin Laras, bobot model, dan satu contoh suara
+      referensi CC0. Setelah diunduh, tidak ada permintaan jaringan sama sekali.
+    </p>
+
+    <div class="unduh">
+      <div class="unduh-utama">
+        <h3>Windows 10 / 11 — x86_64</h3>
+        <p>
+          Zip berisi aplikasi + model 157 MB. Ekstrak, dobel-klik, langsung bisa mengetik
+          dan mendengar — tanpa terminal, tanpa server, tanpa GPU.
+        </p>
+        <div class="tombol">
+          <a class="utama" href="https://github.com/Urdemonlord/laras-tts/releases/download/desktop-v0.1.0/laras-desktop-windows-x86_64.zip">Unduh .zip — 112 MB</a>
+        </div>
+        <div class="meta">
+          <span>v0.1.0</span>
+          <span>207 MB setelah ekstrak</span>
+          <span>sha256 <code style="word-break:break-all">80cefe1451ca187e2021c33c4b9903901528f975e99dcd75a11ae9d9930028c1</code></span>
+        </div>
+        <ol class="langkah">
+          <li><strong>Ekstrak</strong> semua isi zip ke satu folder. Jangan pisahkan
+            <code>DirectML.dll</code> dari <code>laras-desktop.exe</code>.</li>
+          <li><strong>Dobel-klik</strong> <code>laras-desktop.exe</code>.</li>
+          <li>Ketik teks, tekan sintesis. Suara referensi bisa diganti dari dalam aplikasi.</li>
+        </ol>
+      </div>
+
+      <div class="unduh-lain">
+        <div>
+          <h4>Peringatan SmartScreen</h4>
+          <p>
+            Exe belum ditandatangani (sertifikat code-signing berbayar). Windows akan
+            menampilkan “Windows protected your PC” — pilih <em>More info</em> →
+            <em>Run anyway</em>.
+          </p>
+        </div>
+        <div>
+          <h4>Linux &amp; server</h4>
+          <p>Lewat Docker, satu perintah, tanpa build di mesin sendiri.</p>
+          <a href="#pasang">Lihat cara pasang →</a>
+        </div>
+        <div>
+          <h4>Model saja — 157 MB</h4>
+          <p>Untuk dipakai lewat API atau binary sendiri, dengan verifikasi sha256.</p>
+          <a href="https://github.com/Urdemonlord/laras-tts/blob/main/scripts/unduh-model.sh">scripts/unduh-model.sh →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <section id="dengar">
   <div class="bungkus">
@@ -300,14 +379,14 @@ cargo build --release --features onnx
     </p>
     <div class="fitur">
       <div>
-        <h3>±15 MB</h3>
-        <p>Tauri memakai webview bawaan sistem, bukan membawa Chromium sendiri
-        seperti Electron.</p>
+        <h3>±50 MB</h3>
+        <p>Binary 32 MB + runtime ONNX 18 MB. Tauri memakai webview bawaan sistem,
+        bukan membawa Chromium sendiri seperti Electron.</p>
       </div>
       <div>
-        <h3>Tiga sistem</h3>
-        <p>Linux, Windows, dan macOS dibangun dari satu kode di CI. Tanpa GPU di
-        ketiganya.</p>
+        <h3>Windows &amp; Linux</h3>
+        <p>Dibangun di CI dari satu kode. macOS belum dibangun — belum ada yang menguji,
+        jadi tidak diklaim.</p>
       </div>
       <div>
         <h3>Offline</h3>
