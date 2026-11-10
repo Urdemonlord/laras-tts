@@ -7,7 +7,7 @@
 #   docker compose up -d
 services:
   laras:
-    image: ghcr.io/urdemonlord/laras-tts:0.1.1
+    image: ghcr.io/urdemonlord/laras-tts:0.2.0
     ports:
       - "8080:8080"
     volumes:
@@ -24,6 +24,14 @@ services:
       TEMP: "0.1"       # temperatur sampling latent
       EOS: "-4.0"       # ambang logit EOS
       THREADS: "0"      # 0 = semua inti
+      # Pengaman runtime. BIND di dalam container selalu 0.0.0.0, jadi token
+      # adalah satu-satunya yang memisahkan port ini dari internet.
+      # LARAS_TOKEN: "ganti-dengan-openssl-rand-hex-24"
+      RATE_LIMIT: "0"        # permintaan/menit per klien; 0 = tanpa batas
+      MAX_CONCURRENT: "1"    # slot sintesis paralel
+      QUEUE_WAIT: "120"      # detik menunggu slot sebelum 429
+      REQUEST_TIMEOUT: "300" # detik sampai header siap sebelum 504
+      MAX_BODY_KB: "64"
     # model + KV cache tinggal di RAM (~1,9 GB); beri ruang, jangan mepet
     mem_limit: 3g
     restart: unless-stopped

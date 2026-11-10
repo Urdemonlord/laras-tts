@@ -15,16 +15,20 @@
 mod lang;
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
-use axum::extract::State;
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Request, State};
 use axum::http::{header, StatusCode};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 #[cfg(feature = "onnx")]
 mod native;
@@ -108,11 +112,17 @@ mod worker {
     }
 }
 
+// Varian `Uji` (hanya saat tes) jauh lebih kecil dari `Native`, jadi clippy
+// memperingatkan selisih ukuran yang tidak pernah muncul di build rilis.
+#[cfg_attr(test, allow(clippy::large_enum_variant))]
 enum Backend {
     #[cfg(feature = "onnx")]
     Native(native::Native),
     #[cfg(not(feature = "onnx"))]
     Worker(worker::Worker),
+    /// Hanya dipakai tes: rute HTTP bisa diuji tanpa memuat model 438 MB.
+    #[cfg(test)]
+    Uji,
 }
 
 struct Synth {
@@ -162,6 +172,11 @@ impl Backend {
                     takes: Some(takes),
                 })
             }
+            #[cfg(test)]
+            Backend::Uji => {
+                let _ = (key, text, ref_wav, takes, out);
+                Err("backend uji: tidak ada model".to_string())
+            }
         }
     }
 
@@ -179,6 +194,8 @@ impl Backend {
                 "kind": "python-worker",
                 "pid": w.child.id(),
             }),
+            #[cfg(test)]
+            Backend::Uji => serde_json::json!({ "kind": "uji" }),
         }
     }
 }
@@ -198,11 +215,236 @@ struct AppState {
     loudness: f32,
     /// Batas puncak dBFS setelah normalisasi (PEAK_DB).
     peak_db: f32,
+    /// Slot sintesis paralel (MAX_CONCURRENT); sisanya menunggu di antrean.
+    antrean: Arc<Semaphore>,
+    /// Berapa lama boleh menunggu slot sebelum dijawab 429 (QUEUE_WAIT).
+    tunggu_antrean: Duration,
     lang: &'static dyn lang::Lang,
+}
+
+// ---------------------------------------------------------------- penjaga
+//
+// Pengaman runtime: siapa yang boleh memanggil, seberapa sering, berapa lama,
+// dan berapa banyak yang boleh menunggu sekaligus. Semuanya opsional supaya
+// pemakaian di localhost tetap tanpa gesekan, tapi tersedia begitu port-nya
+// dibuka ke jaringan.
+
+/// Batas laju per klien dengan jendela tetap 60 detik.
+struct Laju {
+    batas: u32,
+    jendela: Duration,
+    isi: Mutex<HashMap<String, (Instant, u32)>>,
+}
+
+impl Laju {
+    fn baru(batas: u32) -> Self {
+        Self {
+            batas,
+            jendela: Duration::from_secs(60),
+            isi: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// `Ok(())` = boleh lewat; `Err(detik)` = tolak dan sebut sisa waktunya.
+    fn izinkan(&self, kunci: &str) -> Result<(), u64> {
+        let mut isi = self.isi.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        // Jangan biarkan peta tumbuh tanpa batas kalau kliennya banyak.
+        if isi.len() > 4096 {
+            isi.retain(|_, (t, _)| now.duration_since(*t) < self.jendela);
+        }
+        let e = isi.entry(kunci.to_string()).or_insert((now, 0));
+        let lewat = now.duration_since(e.0);
+        if lewat >= self.jendela {
+            *e = (now, 1);
+            return Ok(());
+        }
+        if e.1 >= self.batas {
+            return Err(self.jendela.saturating_sub(lewat).as_secs().max(1));
+        }
+        e.1 += 1;
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
+struct Penjaga {
+    token: Option<String>,
+    laju: Option<Arc<Laju>>,
+    batas_waktu: Duration,
+    batas_body: usize,
+}
+
+impl Penjaga {
+    fn dari_env(bind: &str) -> Self {
+        let token = match std::env::var("LARAS_TOKEN") {
+            Ok(t) if !t.trim().is_empty() => Some(t.trim().to_string()),
+            _ => None,
+        };
+        let laju = match env_angka("RATE_LIMIT", 0u32) {
+            0 => None,
+            n => Some(Arc::new(Laju::baru(n))),
+        };
+        let batas_waktu = Duration::from_secs(env_angka("REQUEST_TIMEOUT", 300u64).max(1));
+        let batas_body = env_angka("MAX_BODY_KB", 64usize).max(1) * 1024;
+
+        let lokal = matches!(bind, "127.0.0.1" | "::1" | "localhost");
+        if token.is_none() && !lokal {
+            eprintln!(
+                "[peringatan] BIND={bind} tanpa LARAS_TOKEN: siapa pun yang bisa \
+                 menjangkau port ini boleh memakai CPU-nya. Set LARAS_TOKEN untuk mengunci."
+            );
+        }
+        Self {
+            token,
+            laju,
+            batas_waktu,
+            batas_body,
+        }
+    }
+}
+
+/// Bandingkan dua string tanpa membocorkan isi lewat waktu eksekusi.
+fn sama_konstan(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut beda = 0u8;
+    for i in 0..a.len() {
+        beda |= a[i] ^ b[i];
+    }
+    beda == 0
+}
+
+/// Klien mana yang sedang memanggil: hop pertama `X-Forwarded-For` kalau ada
+/// (di belakang reverse proxy semua koneksi datang dari 127.0.0.1), kalau tidak
+/// alamat socket-nya.
+fn kunci_klien(req: &Request) -> String {
+    if let Some(ip) = req
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return ip.to_string();
+    }
+    req.extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|c| c.0.ip().to_string())
+        .unwrap_or_else(|| "tak-dikenal".to_string())
+}
+
+async fn cek_token(State(p): State<Penjaga>, req: Request, next: Next) -> Response {
+    let Some(token) = p.token.as_deref() else {
+        return next.run(req).await;
+    };
+    // Healthcheck container harus tetap jalan tanpa token.
+    if req.uri().path() == "/health" {
+        return next.run(req).await;
+    }
+    let dikirim = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .unwrap_or("");
+    if sama_konstan(dikirim, token) {
+        next.run(req).await
+    } else {
+        (
+            StatusCode::UNAUTHORIZED,
+            [(header::WWW_AUTHENTICATE, "Bearer")],
+            "butuh header Authorization: Bearer <token>\n",
+        )
+            .into_response()
+    }
+}
+
+async fn cek_laju(State(p): State<Penjaga>, req: Request, next: Next) -> Response {
+    let Some(laju) = p.laju.as_ref() else {
+        return next.run(req).await;
+    };
+    if req.uri().path() == "/health" {
+        return next.run(req).await;
+    }
+    match laju.izinkan(&kunci_klien(&req)) {
+        Ok(()) => next.run(req).await,
+        Err(detik) => (
+            StatusCode::TOO_MANY_REQUESTS,
+            [(header::RETRY_AFTER, detik.to_string())],
+            "terlalu banyak permintaan\n",
+        )
+            .into_response(),
+    }
+}
+
+/// Batas waktu hanya mencakup sampai header respons siap; body yang mengalir
+/// (`/tts/stream`) tidak dipotong di tengah jalan.
+async fn batas_waktu(State(p): State<Penjaga>, req: Request, next: Next) -> Response {
+    match tokio::time::timeout(p.batas_waktu, next.run(req)).await {
+        Ok(r) => r,
+        Err(_) => (
+            StatusCode::GATEWAY_TIMEOUT,
+            "permintaan melebihi batas waktu\n",
+        )
+            .into_response(),
+    }
+}
+
+/// Alasan permintaan tidak mendapat slot. Dibuat kecil dan terpisah dari
+/// `Response` supaya `Result`-nya tidak membengkak di setiap titik panggil.
+#[derive(Debug)]
+struct AntreanPenuh {
+    status: StatusCode,
+    pesan: &'static str,
+    retry_after: Option<u64>,
+}
+
+impl AntreanPenuh {
+    fn jadi_response(self) -> Response {
+        let mut res = (self.status, self.pesan).into_response();
+        if let Some(detik) = self.retry_after {
+            if let Ok(v) = detik.to_string().parse() {
+                res.headers_mut().insert(header::RETRY_AFTER, v);
+            }
+        }
+        res
+    }
+}
+
+/// Ambil satu slot sintesis. Kalau antrean penuh sampai `tunggu` habis,
+/// jawab 429 supaya klien tahu harus mencoba lagi — bukan menggantung.
+async fn ambil_izin(
+    antrean: &Arc<Semaphore>,
+    tunggu: Duration,
+) -> Result<OwnedSemaphorePermit, AntreanPenuh> {
+    match tokio::time::timeout(tunggu, Arc::clone(antrean).acquire_owned()).await {
+        Ok(Ok(izin)) => Ok(izin),
+        Ok(Err(_)) => Err(AntreanPenuh {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            pesan: "antrean ditutup\n",
+            retry_after: None,
+        }),
+        Err(_) => Err(AntreanPenuh {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            pesan: "antrean sintesis penuh, coba lagi\n",
+            retry_after: Some(5),
+        }),
+    }
 }
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+fn env_angka<T: std::str::FromStr>(key: &str, default: T) -> T {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(default)
 }
 
 fn hash_key(s: &str) -> String {
@@ -258,6 +500,23 @@ async fn normalize_handler(
         "lang": st.lang.code(),
     }))
     .into_response()
+}
+
+/// Susunan rute + pengaman. Dipakai `main` dan tes, jadi tes HTTP benar-benar
+/// menguji urutan layer yang dipakai di produksi.
+fn bangun_router(state: Arc<AppState>, penjaga: Penjaga) -> Router {
+    // Token paling luar: permintaan tanpa token tidak menghabiskan jatah laju.
+    // `health` dikecualikan di dalam middleware supaya healthcheck tetap jalan.
+    Router::new()
+        .route("/health", get(health))
+        .route("/normalize", get(normalize_handler))
+        .route("/tts", post(tts))
+        .route("/tts/stream", post(tts_stream))
+        .with_state(state)
+        .layer(DefaultBodyLimit::max(penjaga.batas_body))
+        .layer(middleware::from_fn_with_state(penjaga.clone(), batas_waktu))
+        .layer(middleware::from_fn_with_state(penjaga.clone(), cek_laju))
+        .layer(middleware::from_fn_with_state(penjaga, cek_token))
 }
 
 async fn health(State(st): State<Arc<AppState>>) -> Response {
@@ -331,6 +590,13 @@ async fn tts(State(st): State<Arc<AppState>>, Json(req): Json<TtsReq>) -> Respon
     if let Ok(bytes) = std::fs::read(&cached_path) {
         return wav_response(bytes, true, None);
     }
+
+    // Slot diambil setelah cache dicek: permintaan yang sudah ada hasilnya
+    // tidak perlu ikut mengantre di belakang sintesis yang berat.
+    let _izin = match ambil_izin(&st.antrean, st.tunggu_antrean).await {
+        Ok(izin) => izin,
+        Err(tolak) => return tolak.jadi_response(),
+    };
 
     // Sintesis memakan CPU penuh: jalankan di thread blocking, bukan di runtime.
     let st2 = Arc::clone(&st);
@@ -545,6 +811,13 @@ async fn tts_stream(
             .unwrap();
     }
 
+    // Satu slot untuk seluruh aliran: potongan dikirim berurutan dan modelnya
+    // memang cuma satu, jadi menahan slot sampai selesai itu jujur.
+    let _izin = match ambil_izin(&st.antrean, st.tunggu_antrean).await {
+        Ok(izin) => izin,
+        Err(tolak) => return tolak.jadi_response(),
+    };
+
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Bytes, std::io::Error>>(8);
     let st2 = Arc::clone(&st);
     let key2 = key.clone();
@@ -742,6 +1015,11 @@ async fn main() {
         ))
     };
 
+    // Dibaca sebelum server siap supaya peringatan soal BIND/token muncul
+    // di log startup, bukan saat permintaan pertama ditolak.
+    let bind = env_or("BIND", "127.0.0.1");
+    let penjaga = Penjaga::dari_env(&bind);
+
     let state = Arc::new(AppState {
         backend: Mutex::new(backend),
         cache_dir,
@@ -752,6 +1030,8 @@ async fn main() {
         peak_db,
         ref_wav,
         takes,
+        antrean: Arc::new(Semaphore::new(env_angka("MAX_CONCURRENT", 1usize).max(1))),
+        tunggu_antrean: Duration::from_secs(env_angka("QUEUE_WAIT", 120u64)),
         lang: bahasa,
     });
 
@@ -767,22 +1047,27 @@ async fn main() {
         );
     }
 
-    let app = Router::new()
-        .route("/health", get(health))
-        .route("/normalize", get(normalize_handler))
-        .route("/tts", post(tts))
-        .route("/tts/stream", post(tts_stream))
-        .with_state(state);
+    let app = bangun_router(state, penjaga.clone());
 
-    let bind = env_or("BIND", "127.0.0.1");
     let addr = format!("{bind}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind");
     eprintln!(
-        "laras {} (bahasa {}) listening on http://{addr}",
+        "laras {} (bahasa {}) listening on http://{addr} (token: {})",
         env!("CARGO_PKG_VERSION"),
-        bahasa.code()
+        bahasa.code(),
+        if penjaga.token.is_some() {
+            "wajib"
+        } else {
+            "tidak dipakai"
+        }
     );
-    axum::serve(listener, app).await.unwrap();
+    // `ConnectInfo` dipakai pembatas laju untuk tahu klien mana yang memanggil.
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }
 
 #[cfg(test)]
@@ -818,5 +1103,214 @@ mod tests {
         assert_eq!(a, hash_key("halo|ref.wav|3"));
         assert_ne!(a, hash_key("halo|ref.wav|1"));
         assert_eq!(a.len(), 24);
+    }
+
+    // ------------------------------------------------------------ tes HTTP
+    //
+    // Rute diuji lewat `Service::oneshot`: tidak ada port yang dibuka, tapi
+    // permintaannya melewati axum sungguhan — layer, ekstraktor, dan handler
+    // yang sama dengan produksi.
+
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    fn state_uji() -> Arc<AppState> {
+        Arc::new(AppState {
+            backend: Mutex::new(Backend::Uji),
+            cache_dir: std::env::temp_dir().join("laras-uji-cache"),
+            ref_wav: "ref.wav".to_string(),
+            takes: 1,
+            chunk: false,
+            chunk_takes: 1,
+            chunk_min_words: 20,
+            loudness: 0.0,
+            peak_db: -1.5,
+            antrean: Arc::new(Semaphore::new(1)),
+            tunggu_antrean: Duration::from_millis(30),
+            lang: lang::get("id").expect("profil bahasa id"),
+        })
+    }
+
+    fn penjaga_uji(token: Option<&str>, laju: Option<u32>, waktu_ms: u64) -> Penjaga {
+        Penjaga {
+            token: token.map(str::to_string),
+            laju: laju.map(|n| Arc::new(Laju::baru(n))),
+            batas_waktu: Duration::from_millis(waktu_ms),
+            batas_body: 1024,
+        }
+    }
+
+    async fn minta(app: Router, req: Request) -> (StatusCode, axum::http::HeaderMap, String) {
+        let res = app.oneshot(req).await.expect("layer");
+        let status = res.status();
+        let headers = res.headers().clone();
+        let bytes = res.into_body().collect().await.expect("body").to_bytes();
+        (
+            status,
+            headers,
+            String::from_utf8_lossy(&bytes).into_owned(),
+        )
+    }
+
+    fn req_json(uri: &str, body: &str, token: Option<&str>) -> Request {
+        let mut b = Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header(header::CONTENT_TYPE, "application/json");
+        if let Some(t) = token {
+            b = b.header(header::AUTHORIZATION, format!("Bearer {t}"));
+        }
+        b.body(axum::body::Body::from(body.to_string()))
+            .expect("request")
+    }
+
+    fn req_get(uri: &str, xff: Option<&str>) -> Request {
+        let mut b = Request::builder().uri(uri);
+        if let Some(ip) = xff {
+            b = b.header("x-forwarded-for", ip);
+        }
+        b.body(axum::body::Body::empty()).expect("request")
+    }
+
+    #[tokio::test]
+    async fn health_tetap_jalan_tanpa_token() {
+        let app = bangun_router(state_uji(), penjaga_uji(Some("rahasia"), None, 5_000));
+        let (status, _, body) = minta(app, req_get("/health", None)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("\"ok\":true"), "{body}");
+        assert!(body.contains("\"kind\":\"uji\""), "{body}");
+    }
+
+    #[tokio::test]
+    async fn tts_tanpa_token_ditolak_401() {
+        let app = bangun_router(state_uji(), penjaga_uji(Some("rahasia"), None, 5_000));
+        let (status, headers, _) = minta(app, req_json("/tts", r#"{"text":"halo"}"#, None)).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            headers
+                .get(header::WWW_AUTHENTICATE)
+                .map(|v| v.to_str().unwrap()),
+            Some("Bearer")
+        );
+    }
+
+    #[tokio::test]
+    async fn token_salah_ditolak_token_benar_diteruskan() {
+        let app = bangun_router(state_uji(), penjaga_uji(Some("rahasia"), None, 5_000));
+        let (status, _, _) = minta(
+            app.clone(),
+            req_json("/tts", r#"{"text":"halo"}"#, Some("salah")),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+        // Lolos penjaga, lalu gagal di backend uji — yang penting bukan 401.
+        let (status, _, body) =
+            minta(app, req_json("/tts", r#"{"text":"halo"}"#, Some("rahasia"))).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+        assert!(body.contains("backend uji"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn teks_kosong_ditolak_400() {
+        let app = bangun_router(state_uji(), penjaga_uji(None, None, 5_000));
+        let (status, _, body) = minta(app, req_json("/tts", r#"{"text":"   "}"#, None)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("kosong"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn body_json_rusak_ditolak_klien() {
+        let app = bangun_router(state_uji(), penjaga_uji(None, None, 5_000));
+        let (status, _, _) = minta(app, req_json("/tts", r#"{"text":"#, None)).await;
+        assert!(status.is_client_error(), "{status}");
+    }
+
+    #[tokio::test]
+    async fn normalize_lewat_rute_asli() {
+        let app = bangun_router(state_uji(), penjaga_uji(None, None, 5_000));
+        let (status, _, body) = minta(app, req_get("/normalize?text=Halo%2C%20dunia", None)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("\"normalized\""), "{body}");
+        assert!(body.contains("\"lang\":\"id\""), "{body}");
+    }
+
+    #[tokio::test]
+    async fn laju_dibatasi_per_klien_dan_ada_retry_after() {
+        let app = bangun_router(state_uji(), penjaga_uji(None, Some(1), 5_000));
+        assert_eq!(
+            minta(app.clone(), req_get("/normalize?text=a", Some("10.0.0.1")))
+                .await
+                .0,
+            StatusCode::OK
+        );
+        let (status, headers, _) =
+            minta(app.clone(), req_get("/normalize?text=b", Some("10.0.0.1"))).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert!(
+            headers.get(header::RETRY_AFTER).is_some(),
+            "butuh Retry-After"
+        );
+        // Klien lain punya jatahnya sendiri.
+        assert_eq!(
+            minta(app, req_get("/normalize?text=c", Some("10.0.0.2")))
+                .await
+                .0,
+            StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn body_melebihi_batas_ditolak_413() {
+        let app = bangun_router(state_uji(), penjaga_uji(None, None, 5_000));
+        let besar = format!(r#"{{"text":"{}"}}"#, "a".repeat(2_000));
+        let (status, _, _) = minta(app, req_json("/tts", &besar, None)).await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn batas_waktu_memotong_permintaan_lambat() {
+        let app = Router::new()
+            .route(
+                "/lambat",
+                get(|| async {
+                    tokio::time::sleep(Duration::from_millis(300)).await;
+                    "selesai"
+                }),
+            )
+            .layer(middleware::from_fn_with_state(
+                penjaga_uji(None, None, 50),
+                batas_waktu,
+            ));
+        let (status, _, _) = minta(app, req_get("/lambat", None)).await;
+        assert_eq!(status, StatusCode::GATEWAY_TIMEOUT);
+    }
+
+    #[tokio::test]
+    async fn antrean_penuh_dijawab_429_lalu_pulih() {
+        let antrean = Arc::new(Semaphore::new(1));
+        let pegang = ambil_izin(&antrean, Duration::from_millis(5))
+            .await
+            .expect("slot pertama harus dapat");
+        let tolak = ambil_izin(&antrean, Duration::from_millis(20)).await;
+        let tolak = tolak.expect_err("slot kedua harus ditolak");
+        assert_eq!(tolak.status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(tolak.retry_after, Some(5));
+        assert_eq!(
+            tolak.jadi_response().headers().get(header::RETRY_AFTER),
+            Some(&"5".parse().unwrap())
+        );
+        drop(pegang);
+        assert!(ambil_izin(&antrean, Duration::from_millis(20))
+            .await
+            .is_ok());
+    }
+
+    #[test]
+    fn token_dibandingkan_tanpa_bocor_panjang() {
+        assert!(sama_konstan("rahasia", "rahasia"));
+        assert!(!sama_konstan("rahasia", "rahasib"));
+        assert!(!sama_konstan("rahasia", "rahasiaa"));
+        assert!(!sama_konstan("", "rahasia"));
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "laras"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.92"
 description = "Laras — engine TTS Bahasa Indonesia yang CPU-first, self-hosted, dengan kloning suara"
@@ -12,7 +12,7 @@ categories = ["web-programming::http-server", "multimedia::audio"]
 
 [dependencies]
 axum = "0.7"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "fs", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "io-util", "fs", "sync", "time"] }
 tokio-stream = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -28,6 +28,11 @@ hound = { version = "3.5", optional = true }
 unicode-normalization = { version = "0.1", optional = true }
 # Pemilih take berbasis ASR (whisper.cpp) — opsi A tanpa Python.
 whisper-rs = { version = "0.12", optional = true }
+
+[dev-dependencies]
+# Tes HTTP memakai rute asli lewat Service::oneshot, tanpa membuka port.
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
 
 [features]
 default = []

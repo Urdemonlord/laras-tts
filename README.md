@@ -136,7 +136,7 @@ Image publik, dibangun di CI (bukan di mesin-mesinmu):
 ```bash
 docker run --rm -p 8080:8080 \
   -v "$PWD/data:/data" \
-  ghcr.io/urdemonlord/laras-tts:0.1.1
+  ghcr.io/urdemonlord/laras-tts:0.2.0
 ```
 
 Image hanya berisi satu binary native (ONNX Runtime ter-link statis, tanpa
@@ -222,7 +222,7 @@ tetap memakai cache `/tts` kalau ada (`x-stream: 0`).
 ### `GET /health`
 
 ```json
-{"ok":true,"engine":"laras","version":"0.1.0","lang":"id","takes":3,"default_voice":"data/ref/suara.wav"}
+{"ok":true,"engine":"laras","version":"0.2.0","lang":"id","takes":3,"default_voice":"data/ref/suara.wav"}
 ```
 
 ### `GET /normalize?text=...`
@@ -264,6 +264,12 @@ Waktu respons HTTP (4 vCPU, `takes=3`):
 |---|---|---|
 | `BIND` | `127.0.0.1` | alamat bind (`0.0.0.0` di Docker) |
 | `PORT` | `8080` | port HTTP |
+| `LARAS_TOKEN` | _(kosong = terbuka)_ | kalau diisi, semua rute kecuali `/health` butuh `Authorization: Bearer <token>` |
+| `RATE_LIMIT` | `0` (mati) | batas permintaan per menit per klien; `0` = tanpa batas |
+| `MAX_CONCURRENT` | `1` | slot sintesis paralel; sisanya mengantre |
+| `QUEUE_WAIT` | `120` | detik maksimal menunggu slot sebelum dijawab `429` |
+| `REQUEST_TIMEOUT` | `300` | detik sampai header respons siap; lewat itu `504` |
+| `MAX_BODY_KB` | `64` | batas ukuran body permintaan (`413` kalau lewat) |
 | `LARAS_LANG` | `id` | profil bahasa (`src/lang/`) |
 | `REF_WAV` | `data/ref/suara.wav` | referensi suara default; WAV/MP3/m4a/ogg, selain WAV dikonversi otomatis |
 | `TAKES` | `3` | jumlah take untuk best-of-N; 5 = lebih bersih, ±21 s per kalimat sulit |
@@ -285,6 +291,44 @@ Waktu respons HTTP (4 vCPU, `takes=3`):
 | `EOS` | `-3.0` | ambang EOS model |
 | `REF_MAX_S` | `15` | batas potong referensi (detik) |
 | `HF_HOME` | `data/hf` | cache bobot model |
+
+### Pengaman runtime
+
+Default-nya terbuka dan tanpa batas — itu yang membuat `localhost` enak dipakai.
+Begitu port-nya bisa dijangkau orang lain, set minimal `LARAS_TOKEN`:
+
+```bash
+LARAS_TOKEN=$(openssl rand -hex 24) BIND=0.0.0.0 ./target/release/laras
+curl -H "Authorization: Bearer $LARAS_TOKEN" \
+     -d '{"text":"Halo, apa kabar?"}' localhost:8080/tts -o halo.wav
+```
+
+Server mencetak peringatan di log kalau `BIND` bukan loopback sementara
+`LARAS_TOKEN` kosong.
+
+| Jawaban | Artinya |
+|---|---|
+| `401` + `WWW-Authenticate: Bearer` | token tidak ada atau salah |
+| `429` + `Retry-After` | jatah `RATE_LIMIT` habis, atau antrean sintesis penuh |
+| `413` | body lebih besar dari `MAX_BODY_KB` |
+| `504` | permintaan melewati `REQUEST_TIMEOUT` |
+
+`/health` selalu bebas token dan bebas batas laju supaya healthcheck container
+tetap jalan. Antrean hanya berlaku untuk kerja sintesis: permintaan yang sudah
+ada di cache dijawab langsung tanpa ikut mengantre.
+
+Dua catatan jujur:
+
+* Pembatas laju memakai hop pertama `X-Forwarded-For` kalau ada (di belakang
+  reverse proxy semua koneksi datang dari `127.0.0.1`), kalau tidak alamat
+  socket. **Kalau port-nya terbuka langsung ke internet, header itu bisa
+  dipalsukan** — pasang di belakang nginx/Caddy yang menimpanya.
+* `REQUEST_TIMEOUT` mengukur sampai header respons siap. Body `/tts/stream`
+  yang mengalir tidak dipotong di tengah, karena memotong aliran WAV lebih
+  merugikan daripada menunggu.
+
+Token dibandingkan dengan waktu konstan, jadi panjang dan isinya tidak bocor
+lewat timing.
 
 ## Latensi
 
@@ -390,8 +434,21 @@ beberapa instance di belakang nginx.
   kalimat bersih 8% → 17% → 25%. Akarnya kosakata tokenizer 4.000 — "pramugari" dipecah
   jadi 5 subkata.
 - Kecepatan bicara mengikuti tempo referensi.
-- Belum ada streaming; audio dikirim setelah selesai.
+- Streaming mengirim per kalimat, jadi teks ≤ `CHUNK_MIN_WORDS` kata tetap menunggu utuh.
 - Normalizer baru Bahasa Indonesia (dan belum menangani semua format tanggal).
+
+## Kualitas
+
+- **Tes**: 39 unit + HTTP dengan `--features onnx`, 26 tanpa fitur itu. Rute diuji
+  lewat `Service::oneshot` — axum sungguhan, tanpa membuka port, dan memakai
+  susunan layer yang sama dengan `main`.
+- **Lint**: `cargo fmt --check` dan `clippy -D warnings` bersih di kedua
+  kombinasi fitur; CI mengunci Rust 1.92.0 supaya lint baru tidak mengubah hasil.
+- **CI** (`.github/workflows/ci.yml`): 5 job — build default, ONNX, ASR, Python,
+  dan penjaga berkas suara (repo ini tidak menyimpan audio siapa pun).
+- **Image**: dibangun di CI, lalu smoke test menarik image lewat digest dan
+  memeriksa `ldd` bersih, `ffmpeg` benar-benar mengonversi MP3, dan server
+  berhenti di pesan yang jelas saat model tidak ada.
 
 ## Roadmap
 
@@ -403,6 +460,9 @@ beberapa instance di belakang nginx.
 | P1 | Tag `v0.1.0` + image Docker publik ✅ |
 | P1 | Skrip unduh model + verifikasi sha256 ✅ |
 | P1 | Referensi MP3/WAV lain dikonversi otomatis ✅ |
+| P1 | Pengaman runtime: token, batas laju, antrean, timeout, batas body ✅ |
+| P1 | Tes level HTTP lewat `Service::oneshot` (rute asli, tanpa buka port) ✅ |
+| P1 | Tag `v0.2.0`: pengaman runtime + tes HTTP |
 | P1 | Latih ulang dengan kosakata 8–16 ribu — akar masalah artikulasi |
 | P2 | HF Spaces demo (referensi suara sintetis, bukan suara pribadi) |
 | P2 | Pool worker + `SO_REUSEPORT` |
