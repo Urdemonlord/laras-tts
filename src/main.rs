@@ -341,8 +341,10 @@ async fn cek_token(State(p): State<Penjaga>, req: Request, next: Next) -> Respon
     let Some(token) = p.token.as_deref() else {
         return next.run(req).await;
     };
-    // Healthcheck container harus tetap jalan tanpa token.
-    if req.uri().path() == "/health" {
+    // Healthcheck container dan halaman depan harus tetap terbuka: halaman
+    // statis tidak memakai CPU, dan tanpa ini pengunjung cuma melihat 401.
+    // Sintesis tetap butuh token.
+    if matches!(req.uri().path(), "/" | "/health") {
         return next.run(req).await;
     }
     let dikirim = req
@@ -367,7 +369,7 @@ async fn cek_laju(State(p): State<Penjaga>, req: Request, next: Next) -> Respons
     let Some(laju) = p.laju.as_ref() else {
         return next.run(req).await;
     };
-    if req.uri().path() == "/health" {
+    if matches!(req.uri().path(), "/" | "/health") {
         return next.run(req).await;
     }
     match laju.izinkan(&kunci_klien(&req)) {
@@ -508,6 +510,7 @@ fn bangun_router(state: Arc<AppState>, penjaga: Penjaga) -> Router {
     // Token paling luar: permintaan tanpa token tidak menghabiskan jatah laju.
     // `health` dikecualikan di dalam middleware supaya healthcheck tetap jalan.
     Router::new()
+        .route("/", get(halaman_demo))
         .route("/health", get(health))
         .route("/normalize", get(normalize_handler))
         .route("/tts", post(tts))
@@ -517,6 +520,16 @@ fn bangun_router(state: Arc<AppState>, penjaga: Penjaga) -> Router {
         .layer(middleware::from_fn_with_state(penjaga.clone(), batas_waktu))
         .layer(middleware::from_fn_with_state(penjaga.clone(), cek_laju))
         .layer(middleware::from_fn_with_state(penjaga, cek_token))
+}
+
+/// Halaman depan: satu kotak teks dan tombol putar. Berkasnya di `demo/`,
+/// ikut dikompilasi ke binary supaya image tidak perlu menyajikan direktori.
+async fn halaman_demo() -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        include_str!("../demo/index.html"),
+    )
+        .into_response()
 }
 
 async fn health(State(st): State<Arc<AppState>>) -> Response {
@@ -1179,6 +1192,33 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert!(body.contains("\"ok\":true"), "{body}");
         assert!(body.contains("\"kind\":\"uji\""), "{body}");
+    }
+
+    #[tokio::test]
+    async fn halaman_depan_terbuka_tanpa_token() {
+        let app = bangun_router(state_uji(), penjaga_uji(Some("rahasia"), Some(1), 5_000));
+        let (status, headers, body) = minta(app.clone(), req_get("/", None)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            headers
+                .get(header::CONTENT_TYPE)
+                .map(|v| v.to_str().unwrap()),
+            Some("text/html; charset=utf-8")
+        );
+        assert!(body.contains("Laras"), "halaman harus punya judul");
+        assert!(body.contains("/tts"), "halaman harus menyebut endpoint-nya");
+
+        // Halaman depan juga tidak menghabiskan jatah laju: dengan jatah
+        // 1/menit, permintaan berikutnya masih boleh lewat.
+        let app = bangun_router(state_uji(), penjaga_uji(None, Some(1), 5_000));
+        assert_eq!(
+            minta(app.clone(), req_get("/", None)).await.0,
+            StatusCode::OK
+        );
+        assert_eq!(
+            minta(app, req_get("/normalize?text=a", None)).await.0,
+            StatusCode::OK
+        );
     }
 
     #[tokio::test]

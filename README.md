@@ -173,6 +173,12 @@ tertentu, jadi hasilnya reproducible.
 
 ## API
 
+### `GET /`
+
+Halaman depan: satu kotak teks, satu tombol putar, dan perintah `curl` yang
+setara. Berkasnya `demo/index.html`, ikut dikompilasi ke dalam binary
+(`include_str!`) jadi tidak ada aset yang perlu disajikan terpisah.
+
 ### `POST /tts`
 
 ```json
@@ -239,6 +245,34 @@ Debug normalizer tanpa memuat model:
 curl -s --get localhost:8080/normalize --data-urlencode 'text=Diskon 25% jadi Rp 89.900'
 # {"input":"...","normalized":"Diskon dua puluh lima persen jadi delapan puluh sembilan ribu sembilan ratus rupiah","lang":"id"}
 ```
+
+## Demo publik
+
+Ada dua cara orang bisa mendengar Laras tanpa memasang apa pun.
+
+**1. Halaman statis** — `~/tts-bench` menghasilkan sampel MP3 dari kalimat uji
+dan dipublikasikan sebagai halaman dengar. Tidak butuh server, tidak butuh CPU:
+hanya berkas audio. Cocok untuk menunjukkan kualitas apa adanya.
+
+**2. HF Space** — `demo/hf-space/` berisi Dockerfile + metadata Space yang siap
+dipakai. Model diunduh saat build (bukan saat start), referensinya sampel
+Common Voice **CC0** supaya bukan suara pribadi siapa pun, dan batas laju
+dipasang karena CPU Space dipakai bersama.
+
+```bash
+# sekali saja
+pip install -U "huggingface_hub[cli]"
+huggingface-cli login          # butuh token dengan izin tulis
+
+# buat Space-nya (ganti <user> dengan akunmu)
+huggingface-cli repo create laras-tts --type space --space-sdk docker
+git clone https://huggingface.co/spaces/<user>/laras-tts hf-space
+cp demo/hf-space/Dockerfile demo/hf-space/README.md hf-space/
+cd hf-space && git add -A && git commit -m "demo Laras" && git push
+```
+
+Space membangun image-nya sendiri dari `ghcr.io/urdemonlord/laras-tts` — tidak
+perlu build lokal dan tidak perlu GPU.
 
 ## Benchmark
 

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laras — TTS Bahasa Indonesia</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #0d1117; color: #e6edf3; padding: 24px;
+  }
+  main { width: 100%; max-width: 640px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; letter-spacing: -.02em; }
+  .sub { color: #8b949e; margin: 0 0 24px; font-size: .92rem; }
+  textarea {
+    width: 100%; min-height: 96px; padding: 12px; border-radius: 8px; resize: vertical;
+    background: #161b22; color: inherit; border: 1px solid #30363d; font: inherit;
+  }
+  textarea:focus { outline: 2px solid #1f6feb; outline-offset: 1px; }
+  .baris { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  button {
+    padding: 10px 18px; border-radius: 8px; border: 1px solid #238636;
+    background: #238636; color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: .55; cursor: progress; }
+  button.sekunder { background: transparent; border-color: #30363d; font-weight: 400; }
+  .status { color: #8b949e; font-size: .85rem; }
+  audio { width: 100%; margin-top: 16px; }
+  pre {
+    background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+    padding: 12px; overflow-x: auto; font-size: .8rem; margin: 20px 0 0;
+  }
+  a { color: #58a6ff; }
+  .galat { color: #f85149; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Laras</h1>
+  <p class="sub">TTS Bahasa Indonesia dengan kloning suara — CPU-first, jalan di server sendiri.</p>
+
+  <textarea id="teks" maxlength="500">Halo, saya Laras. Saya bisa membaca teks Bahasa Indonesia dengan suara yang mirip dengan rekaman referensi.</textarea>
+
+  <div class="baris">
+    <button id="tombol">Buat suara</button>
+    <button id="salin" class="sekunder" hidden>Salin sebagai curl</button>
+    <span class="status" id="status"></span>
+  </div>
+
+  <audio id="pemutar" controls hidden></audio>
+
+  <pre id="perintah" hidden></pre>
+
+  <p class="status" style="margin-top:24px">
+    API: <code>POST /tts</code> · <code>POST /tts/stream</code> ·
+    <a href="/health">/health</a> · <a href="/normalize">/normalize</a>
+  </p>
+</main>
+
+<script>
+const teks = document.getElementById('teks');
+const tombol = document.getElementById('tombol');
+const status = document.getElementById('status');
+const pemutar = document.getElementById('pemutar');
+const salin = document.getElementById('salin');
+const perintah = document.getElementById('perintah');
+let urlTerakhir = null;
+
+function tampilkanPerintah(t) {
+  const aman = t.replace(/'/g, "'\\''");
+  perintah.textContent =
+    "curl -s -X POST " + location.origin + "/tts \\\n" +
+    "  -H 'content-type: application/json' \\\n" +
+    "  -d '{\"text\":\"" + aman + "\"}' \\\n" +
+    "  -o suara.wav";
+  perintah.hidden = false;
+  salin.hidden = false;
+}
+
+tombol.addEventListener('click', async () => {
+  const t = teks.value.trim();
+  if (!t) { status.textContent = 'Teks masih kosong.'; return; }
+
+  tombol.disabled = true;
+  status.className = 'status';
+  status.textContent = 'Menyintesis…';
+  const mulai = performance.now();
+
+  try {
+    const res = await fetch('/tts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: t }),
+    });
+    if (!res.ok) {
+      const pesan = await res.text();
+      throw new Error(res.status + ' ' + (pesan || res.statusText));
+    }
+    const blob = await res.blob();
+    if (urlTerakhir) URL.revokeObjectURL(urlTerakhir);
+    urlTerakhir = URL.createObjectURL(blob);
+    pemutar.src = urlTerakhir;
+    pemutar.hidden = false;
+    pemutar.play().catch(() => {});
+    const detik = ((performance.now() - mulai) / 1000).toFixed(1);
+    const cache = res.headers.get('x-cache') === 'hit' ? ' (dari cache)' : '';
+    status.textContent = 'Selesai dalam ' + detik + ' s' + cache + '.';
+    tampilkanPerintah(t);
+  } catch (e) {
+    status.className = 'status galat';
+    status.textContent = 'Gagal: ' + e.message;
+  } finally {
+    tombol.disabled = false;
+  }
+});
+
+salin.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(perintah.textContent);
+    salin.textContent = 'Tersalin';
+    setTimeout(() => { salin.textContent = 'Salin sebagai curl'; }, 1500);
+  } catch (_) { /* clipboard bisa ditolak browser; biarkan teksnya terbaca */ }
+});
+</script>
+</body>
+</html>
