@@ -164,6 +164,8 @@ async function buat() {
     el.pemutar.src = convertFileSrc(hasil.berkas);
     el.pemutar.load();
     el.hasil.hidden = false;
+    el.simpan.disabled = false;
+    el.folder.disabled = false;
 
     el.metaDurasi.textContent =
       hasil.durasi.toFixed(2) + ' s audio · ' +

@@ -74,6 +74,28 @@ Kalau tidak ketemu, panel **Pengaturan** terbuka dan kamu bisa menunjuk folder
 sendiri. Tidak ada unduhan tersembunyi di dalam aplikasi — model diunduh lewat
 skrip yang bisa kamu baca (`scripts/unduh-model.sh`, memverifikasi sha256).
 
+## Memeriksa tampilan tanpa membangun binary
+
+Tata letak bisa diperiksa tanpa mengompilasi Tauri: buka `ui/index.html` di
+peramban WebKit dengan `window.__TAURI__` tiruan yang mengembalikan bentuk data
+perintah sungguhan. Yang terverifikasi dengan cara ini adalah HTML/CSS — bukan
+IPC Tauri-nya.
+
+Di mesin tanpa layar, WebDriver WebKit bisa menjepret halamannya langsung
+(tangkapan diambil dari mesin render, bukan dari X — jadi tidak terkena masalah
+komposisi GL):
+
+```bash
+sudo apt install -y webkit2gtk-driver
+Xvfb :77 -screen 0 900x900x24 &
+DISPLAY=:77 WebKitWebDriver --port=4444 &
+# POST /session, POST /session/{id}/url, lalu GET /session/{id}/screenshot
+```
+
+Catatan dari pemeriksaan pertama: `.hasil { display: flex }` mengalahkan atribut
+`hidden`, sehingga kartu hasil tampil sebelum ada audio. Karena itu ada aturan
+`[hidden] { display: none !important; }` di `gaya.css`.
+
 ## Batasan yang sama dengan gateway
 
 Aplikasi ini tidak memperbaiki model. Artikulasi gugus konsonan tetap lemah
