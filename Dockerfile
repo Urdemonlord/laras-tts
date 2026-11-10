@@ -14,6 +14,8 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+# Halaman depan di-`include_str!` dari `src/main.rs`, jadi harus ada saat build.
+COPY demo/index.html ./demo/index.html
 RUN cargo build --release --features onnx
 
 # ---- runtime: debian minimal, hanya satu binary ----
