@@ -1,14 +1,23 @@
 # syntax=docker/dockerfile:1
 
 # ---- build: gateway + engine native (ONNX Runtime), tanpa Python ----
-FROM rust:1.83-slim AS build
+# Rust 1.92 = MSRV sebenarnya: `ort 2.0.0-rc.15` menuntut rustc 1.92, dan
+# `ureq-proto` yang ikut terbawa butuh Cargo dengan edition2024.
+# Build dan runtime sama-sama trixie: runtime ONNX yang ditanam `ort` adalah
+# arsip statis C++ yang butuh GLIBCXX_3.4.31+ / GLIBC_2.38+ — bookworm-slim
+# (gcc 12, glibc 2.36) gagal di tahap link.
+FROM rust:1.92-slim-trixie AS build
 WORKDIR /src
+# `ort` mengunduh runtime ONNX saat build lewat ureq → openssl-sys butuh ini.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends pkg-config libssl-dev g++ \
+ && rm -rf /var/lib/apt/lists/*
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 RUN cargo build --release --features onnx
 
 # ---- runtime: debian minimal, hanya satu binary ----
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \
