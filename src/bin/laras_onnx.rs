@@ -160,8 +160,10 @@ fn read_f32(path: &Path) -> Result<Vec<f32>> {
         return Err(anyhow!("berkas noise harus kelipatan 4 byte"));
     }
     Ok(raw
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
         .collect())
 }
 

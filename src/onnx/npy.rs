@@ -70,8 +70,10 @@ pub fn parse_f32(buf: &[u8]) -> Result<NpyF32> {
         ));
     }
     let data = body[..count * 4]
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
         .collect();
 
     Ok(NpyF32 { shape, data })

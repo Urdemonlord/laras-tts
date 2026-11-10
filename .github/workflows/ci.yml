@@ -10,8 +10,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Toolchain dikunci, bukan `@stable`: Rust 1.99 menambah lint clippy baru
+      # (`chunks_exact_to_as_chunks`, `unnecessary_map_or`) yang bikin CI merah
+      # tanpa ada perubahan kode. Versi ini sama dengan image Docker.
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: "1.92.0"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
@@ -25,6 +29,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: "1.92.0"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
@@ -41,6 +46,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: "1.92.0"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:

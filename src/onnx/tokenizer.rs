@@ -102,7 +102,7 @@ impl Tokenizer {
                 cand.push_str(&syms[i]);
                 cand.push_str(&syms[i + 1]);
                 if let Some(p) = self.vocab.get(&cand) {
-                    if best.as_ref().map_or(true, |b| p.score > b.0) {
+                    if best.as_ref().is_none_or(|b| p.score > b.0) {
                         best = Some((p.score, i, cand));
                     }
                 }
