@@ -271,7 +271,13 @@ sebagai basis image; `--nama` mengganti nama Space.
 
 Space membangun image-nya sendiri dari `ghcr.io/urdemonlord/laras-tts` — tidak
 perlu build lokal dan tidak perlu GPU. Token tidak pernah masuk ke URL git atau
-argv: ditulis ke berkas sementara 600 lalu dibaca credential helper.
+argv: ditulis ke berkas sementara 600 lalu dibaca credential helper. Skripnya
+hanya butuh `curl`, `git`, dan `jq`.
+
+> **Docker Space di CPU-basic gratis ditolak Hugging Face** dengan HTTP 402
+> ("hosting Gradio and Docker Spaces on free cpu-basic requires a PRO
+> subscription"). Kalau akunmu belum PRO, lewati bagian ini dan pakai halaman
+> statis atau host sendiri — Space statis gratis, tapi tidak bisa menyintesis.
 
 ## Benchmark
 
