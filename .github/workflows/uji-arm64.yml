@@ -1,0 +1,14 @@
+name: uji-arm64
+
+# Sementara: memastikan runner arm64 native benar-benar tersedia untuk repo ini
+# sebelum mengubah alur rilis jadi multi-arch. Dihapus setelah terbukti.
+on:
+  push:
+    branches: [uji-arm64]
+  workflow_dispatch:
+
+jobs:
+  cek:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - run: uname -m && nproc && free -g | head -2
