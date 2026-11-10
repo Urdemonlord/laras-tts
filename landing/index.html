@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laras — TTS Bahasa Indonesia, CPU-first, kloning suara</title>
+<meta name="description" content="Engine text-to-speech Bahasa Indonesia yang berjalan tanpa GPU. Kloning suara dari 10–15 detik rekaman, satu binary Rust, API HTTP, dan aplikasi desktop.">
+<meta property="og:title" content="Laras — TTS Bahasa Indonesia tanpa GPU">
+<meta property="og:description" content="Kloning suara dari 10–15 detik rekaman. Satu binary Rust, CPU-first, streaming per kalimat.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
+<style>
+  :root {
+    --bg: #0b0e14;
+    --bg2: #11151d;
+    --garis: #1f2733;
+    --teks: #e6edf3;
+    --redup: #8b97a8;
+    --aksen: #7c9cff;
+    --aksen2: #4ade80;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--teks);
+    font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--aksen); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre { font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace; }
+  .bungkus { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---------------------------------------------------------------- nav */
+  nav {
+    position: sticky; top: 0; z-index: 10;
+    backdrop-filter: blur(12px); background: rgba(11, 14, 20, .82);
+    border-bottom: 1px solid var(--garis);
+  }
+  nav .bungkus { display: flex; align-items: center; gap: 24px; height: 60px; }
+  .merek { font-weight: 700; letter-spacing: -.02em; font-size: 1.05rem; color: var(--teks); }
+  .merek span { color: var(--aksen); }
+  nav .tautan { display: flex; gap: 20px; margin-left: auto; font-size: .9rem; }
+  nav .tautan a { color: var(--redup); }
+  nav .tautan a:hover { color: var(--teks); text-decoration: none; }
+  @media (max-width: 720px) { nav .tautan { display: none; } }
+
+  /* --------------------------------------------------------------- hero */
+  header { padding: 88px 0 64px; }
+  .label {
+    display: inline-flex; align-items: center; gap: 8px; font-size: .78rem;
+    color: var(--aksen2); border: 1px solid #1d3b2a; background: #0f1c16;
+    padding: 4px 12px; border-radius: 999px; margin-bottom: 20px;
+  }
+  h1 {
+    font-size: clamp(2.1rem, 5.2vw, 3.4rem); line-height: 1.1;
+    letter-spacing: -.035em; margin: 0 0 20px; font-weight: 700;
+  }
+  h1 em { font-style: normal; color: var(--aksen); }
+  .pimpin { font-size: clamp(1rem, 2vw, 1.15rem); color: var(--redup); max-width: 62ch; margin: 0 0 32px; }
+  .tombol { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .tombol a, .tombol button {
+    display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: .92rem;
+    padding: 11px 20px; border-radius: 9px; border: 1px solid var(--garis);
+    background: var(--bg2); color: var(--teks); cursor: pointer;
+  }
+  .tombol a.utama { background: var(--aksen); border-color: var(--aksen); color: #0b0e14; font-weight: 600; }
+  .tombol a:hover, .tombol button:hover { text-decoration: none; border-color: #38445a; }
+  .tombol a.utama:hover { filter: brightness(1.08); }
+
+  /* -------------------------------------------------------------- angka */
+  .angka {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+    background: var(--garis); border: 1px solid var(--garis);
+    border-radius: 12px; overflow: hidden; margin: 56px 0 0;
+  }
+  .angka div { background: var(--bg2); padding: 20px 18px; }
+  .angka b { display: block; font-size: 1.5rem; letter-spacing: -.02em; font-weight: 700; }
+  .angka small { color: var(--redup); font-size: .8rem; }
+  @media (max-width: 720px) { .angka { grid-template-columns: repeat(2, 1fr); } }
+
+  /* ------------------------------------------------------------- bagian */
+  section { padding: 72px 0; border-top: 1px solid var(--garis); }
+  h2 { font-size: 1.55rem; letter-spacing: -.025em; margin: 0 0 8px; }
+  .kepala-bagian { color: var(--redup); margin: 0 0 36px; max-width: 62ch; }
+
+  /* -------------------------------------------------------------- audio */
+  .dengar { display: grid; gap: 14px; }
+  .kartu-audio {
+    display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center;
+    background: var(--bg2); border: 1px solid var(--garis); border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .kartu-audio p { margin: 0; font-size: .95rem; }
+  .kartu-audio small { color: var(--redup); font-size: .8rem; }
+  .kartu-audio audio { width: 260px; height: 34px; }
+  @media (max-width: 720px) {
+    .kartu-audio { grid-template-columns: 1fr; }
+    .kartu-audio audio { width: 100%; }
+  }
+
+  /* ------------------------------------------------------------- fitur */
+  .fitur { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .fitur div { background: var(--bg2); border: 1px solid var(--garis); border-radius: 12px; padding: 22px; }
+  .fitur h3 { margin: 0 0 8px; font-size: 1rem; }
+  .fitur p { margin: 0; color: var(--redup); font-size: .9rem; }
+  @media (max-width: 860px) { .fitur { grid-template-columns: 1fr; } }
+
+  /* -------------------------------------------------------------- kode */
+  .blok-kode { position: relative; margin: 0 0 18px; }
+  .blok-kode pre {
+    background: #070a0f; border: 1px solid var(--garis); border-radius: 10px;
+    padding: 16px 18px; overflow-x: auto; font-size: .84rem; line-height: 1.6; margin: 0;
+  }
+  .blok-kode .salin {
+    position: absolute; top: 10px; right: 10px; font: inherit; font-size: .74rem;
+    padding: 4px 10px; border-radius: 6px; border: 1px solid var(--garis);
+    background: #131922; color: var(--redup); cursor: pointer;
+  }
+  .blok-kode .salin:hover { color: var(--teks); }
+  .komentar { color: #5b6b80; }
+  .perintah { color: var(--aksen2); }
+
+  /* -------------------------------------------------------------- tabel */
+  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--garis); vertical-align: top; }
+  th { color: var(--redup); font-weight: 500; font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  td code { background: #131922; padding: 2px 6px; border-radius: 4px; font-size: .84rem; }
+  .tabel-bungkus { overflow-x: auto; }
+
+  /* ------------------------------------------------------------ batasan */
+  .batasan { background: #12100c; border: 1px solid #3a2f18; border-radius: 12px; padding: 24px; }
+  .batasan h2 { font-size: 1.15rem; margin-bottom: 12px; }
+  .batasan ul { margin: 0; padding-left: 20px; color: var(--redup); font-size: .92rem; }
+  .batasan li { margin-bottom: 8px; }
+  .batasan strong { color: var(--teks); font-weight: 600; }
+
+  footer { border-top: 1px solid var(--garis); padding: 36px 0 56px; color: var(--redup); font-size: .86rem; }
+  footer .bungkus { display: flex; gap: 20px; flex-wrap: wrap; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="bungkus">
+    <span class="merek">Laras<span>.</span></span>
+    <div class="tautan">
+      <a href="#dengar">Dengar</a>
+      <a href="#pasang">Pasang</a>
+      <a href="#api">API</a>
+      <a href="#desktop">Desktop</a>
+      <a href="https://github.com/Urdemonlord/laras-tts">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header>
+  <div class="bungkus">
+    <span class="label">● v0.2.1 — amd64 &amp; arm64</span>
+    <h1>Suara Bahasa Indonesia<br>yang jalan di <em>CPU</em>.</h1>
+    <p class="pimpin">
+      Laras mengubah teks jadi suara dengan mengikuti rekaman referensi 10–15 detik.
+      Satu binary Rust, tanpa GPU, tanpa Python, tanpa layanan awan — jalan di laptop,
+      VPS 2 vCPU, atau Raspberry Pi.
+    </p>
+    <div class="tombol">
+      <a class="utama" href="#pasang">Coba sekarang</a>
+      <a href="https://github.com/Urdemonlord/laras-tts">Lihat kode</a>
+    </div>
+
+    <div class="angka">
+      <div><b>0,17×</b><small>real-time factor, 4 vCPU</small></div>
+      <div><b>0,26 s</b><small>byte pertama di /tts/stream</small></div>
+      <div><b>160 MB</b><small>bobot model int8</small></div>
+      <div><b>&lt; 3 GB</b><small>RAM saat menyintesis</small></div>
+    </div>
+  </div>
+</header>
+
+<section id="dengar">
+  <div class="bungkus">
+    <h2>Dengar dulu</h2>
+    <p class="kepala-bagian">
+      Tiga kalimat di bawah disintesis di mesin 4 vCPU. Referensinya sampel
+      <strong>Common Voice berlisensi CC0</strong> — bukan rekaman pribadi siapa pun.
+    </p>
+    <div class="dengar">
+      <div class="kartu-audio">
+        <p>Sapaan biasa<small>7 detik · teks 96 karakter</small></p>
+        <audio controls preload="none" src="assets/salam.mp3"></audio>
+      </div>
+      <div class="kartu-audio">
+        <p>Angka dan mata uang<small>9 detik · “15 persen”, “Rp 12.500”, “0,5 persen”</small></p>
+        <audio controls preload="none" src="assets/angka.mp3"></audio>
+      </div>
+      <div class="kartu-audio">
+        <p>Kalimat teknis<small>10 detik · istilah campur Indonesia–Inggris</small></p>
+        <audio controls preload="none" src="assets/jujur.mp3"></audio>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="bungkus">
+    <h2>Kenapa Laras</h2>
+    <p class="kepala-bagian">Dibuat untuk orang yang ingin menjalankannya sendiri, bukan menyewa API.</p>
+    <div class="fitur">
+      <div>
+        <h3>Kloning dari 10–15 detik</h3>
+        <p>Beri satu rekaman WAV, MP3, atau m4a. Laras mengonversinya sendiri lewat ffmpeg,
+        lalu meniru warna suaranya — tanpa fine-tuning, tanpa unggah ke mana pun.</p>
+      </div>
+      <div>
+        <h3>Tanpa GPU</h3>
+        <p>ONNX Runtime dengan kuantisasi int8. Empat inti CPU cukup untuk 0,17× real-time:
+        22,7 detik audio selesai dalam 3,76 detik.</p>
+      </div>
+      <div>
+        <h3>Streaming per kalimat</h3>
+        <p><code>/tts/stream</code> mengirim audio sambil menyintesis sisa teks. Byte pertama
+        datang 0,26 detik setelah permintaan, bukan 3,76 detik.</p>
+      </div>
+      <div>
+        <h3>Satu binary, tanpa Python</h3>
+        <p>Rute HTTP, normalisasi teks, pemotongan kalimat, dan inferensi semuanya di Rust.
+        Image Docker-nya 180 MB, bukan 2 GB.</p>
+      </div>
+      <div>
+        <h3>Pengaman yang menyala saat diminta</h3>
+        <p>Token Bearer, batas laju per klien, antrean, timeout, dan batas ukuran body —
+        semuanya opt-in lewat env, jadi <code>localhost</code> tetap tanpa gesekan.</p>
+      </div>
+      <div>
+        <h3>Jujur soal batasnya</h3>
+        <p>Artikulasi gugus konsonan masih lemah karena kosakata tokenizer 4.000 kata.
+        Itu ditulis di README, bukan disembunyikan di catatan kaki.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="pasang">
+  <div class="bungkus">
+    <h2>Pasang</h2>
+    <p class="kepala-bagian">Pilih satu. Model diunduh sekali, diverifikasi sha256-nya.</p>
+
+    <div class="blok-kode">
+      <button class="salin" data-target="kode-docker">Salin</button>
+      <pre id="kode-docker"><span class="komentar"># unduh model + referensi CC0 (sekali, ±160 MB)</span>
+git clone https://github.com/Urdemonlord/laras-tts &amp;&amp; cd laras-tts
+<span class="perintah">./scripts/unduh-model.sh</span>
+
+<span class="komentar"># jalankan</span>
+<span class="perintah">docker run --rm -p 8080:8080 -v "$PWD/data:/data" \
+  ghcr.io/urdemonlord/laras-tts:0.2.1</span>
+
+<span class="komentar"># sintesis</span>
+curl -s -X POST localhost:8080/tts \
+  -H 'content-type: application/json' \
+  -d '{"text":"Halo, apa kabar?"}' -o halo.wav</pre>
+    </div>
+
+    <div class="blok-kode">
+      <button class="salin" data-target="kode-cargo">Salin</button>
+      <pre id="kode-cargo"><span class="komentar"># tanpa Docker: butuh Rust ≥ 1.92 dan cmake</span>
+cargo build --release --features onnx
+<span class="perintah">MODELS_DIR=data/models REF_WAV=data/ref/suara.mp3 ./target/release/laras</span></pre>
+    </div>
+  </div>
+</section>
+
+<section id="api">
+  <div class="bungkus">
+    <h2>API</h2>
+    <p class="kepala-bagian">Empat rute, semuanya JSON masuk dan audio keluar.</p>
+    <div class="tabel-bungkus">
+      <table>
+        <thead>
+          <tr><th>Rute</th><th>Guna</th><th>Catatan</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>POST /tts</code></td><td>Sintesis satu teks jadi WAV 24 kHz mono</td><td>Header <code>x-cache</code>, <code>x-duration</code>, <code>x-wer</code></td></tr>
+          <tr><td><code>POST /tts/stream</code></td><td>Sintesis bertahap per kalimat</td><td><code>?fmt=pcm</code> untuk <code>audio/L16</code> mentah</td></tr>
+          <tr><td><code>GET /normalize</code></td><td>Lihat hasil normalisasi teks</td><td>Angka, mata uang, singkatan</td></tr>
+          <tr><td><code>GET /health</code></td><td>Status mesin dan versi</td><td>Bebas token, untuk healthcheck</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="desktop">
+  <div class="bungkus">
+    <h2>Aplikasi desktop</h2>
+    <p class="kepala-bagian">
+      Untuk yang ingin mengetik dan langsung mendengar tanpa terminal. Dibangun dengan
+      Tauri: antarmuka webview sistem, mesin Laras dipanggil langsung di dalam proses —
+      tanpa port, tanpa server yang harus dijalankan lebih dulu.
+    </p>
+    <div class="fitur">
+      <div>
+        <h3>±15 MB</h3>
+        <p>Tauri memakai webview bawaan sistem, bukan membawa Chromium sendiri
+        seperti Electron.</p>
+      </div>
+      <div>
+        <h3>Tiga sistem</h3>
+        <p>Linux, Windows, dan macOS dibangun dari satu kode di CI. Tanpa GPU di
+        ketiganya.</p>
+      </div>
+      <div>
+        <h3>Offline</h3>
+        <p>Model disimpan di disk lokal. Setelah unduhan pertama, tidak ada
+        permintaan jaringan sama sekali.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="bungkus">
+    <div class="batasan">
+      <h2>Batas yang perlu kamu tahu sebelum menilai</h2>
+      <ul>
+        <li><strong>Artikulasi gugus konsonan lemah.</strong> “kloning” bisa terdengar “koning”,
+        “kereta” jadi “kretah”. Ini batas kosakata tokenizer 4.000 kata — menambah langkah
+        decoding atau mengeja ulang tidak menolong.</li>
+        <li><strong>Memperbaikinya butuh GPU.</strong> Kosakata 8–16 ribu kata berarti latih ulang
+        model, dan itu di luar jangkauan mesin 2 vCPU tanpa kartu grafis.</li>
+        <li><strong>Tempo mengikuti referensi.</strong> Referensi cepat menghasilkan suara cepat.</li>
+        <li><strong>Teks panjang dipecah per kalimat</strong> supaya tidak berhenti di sekitar
+        16 detik.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="bungkus">
+    <span>Laras · lisensi MIT OR Apache-2.0 · bobot model punya lisensinya sendiri</span>
+    <span>
+      <a href="https://github.com/Urdemonlord/laras-tts">GitHub</a> ·
+      <a href="https://github.com/Urdemonlord/laras-tts/blob/main/ETHICS.md">Etika pemakaian</a> ·
+      <a href="https://github.com/Urdemonlord/laras-tts/releases">Rilis</a>
+    </span>
+  </div>
+</footer>
+
+<script>
+document.querySelectorAll('.salin').forEach(function (tombol) {
+  tombol.addEventListener('click', function () {
+    var teks = document.getElementById(tombol.dataset.target).innerText;
+    var selesai = function () {
+      tombol.textContent = 'Tersalin';
+      setTimeout(function () { tombol.textContent = 'Salin'; }, 1500);
+    };
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(teks).then(selesai, function () {});
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = teks; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta); selesai();
+    }
+  });
+});
+</script>
+</body>
+</html>
