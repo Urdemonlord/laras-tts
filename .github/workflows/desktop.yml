@@ -110,6 +110,40 @@ jobs:
             Copy-Item -Destination out\
           Get-ChildItem out | Select-Object Name, Length | Format-Table
 
+      - name: Siapkan model + referensi
+        # Model diambil dari Hugging Face lewat skrip repo sendiri, jadi
+        # paketnya lengkap: cukup unduh satu artefak, ekstrak, jalankan.
+        # Referensi yang dipakai adalah contoh Common Voice CC0 — bukan suara
+        # pribadi siapa pun. Pengguna bisa menggantinya dari dalam aplikasi.
+        shell: bash
+        run: |
+          bash scripts/unduh-model.sh --dir out/data/models --ref-dir out/data/ref
+          mv out/data/ref/common_voice_id_19961910.mp3 out/data/ref/suara.mp3
+
+      - name: Tulis petunjuk pakai
+        shell: bash
+        run: |
+          cat > out/BACA-DULU.txt <<'EOF'
+          Laras — aplikasi desktop TTS Bahasa Indonesia
+          =============================================
+
+          Cara pakai:
+            1. Ekstrak SEMUA isi zip ini ke satu folder (jangan pisahkan).
+            2. Dobel-klik laras-desktop.exe
+
+          Isi folder harus seperti ini:
+            laras-desktop.exe
+            DirectML.dll
+            data/models/   (9 berkas model ONNX)
+            data/ref/suara.mp3
+
+          Catatan:
+            - DirectML.dll wajib ada di folder yang sama dengan .exe.
+            - Suara referensi bawaan adalah contoh Common Voice (CC0).
+              Ganti lewat menu di aplikasi kalau mau suara lain.
+            - Semua proses berjalan di CPU, tanpa jaringan.
+          EOF
+
       - uses: actions/upload-artifact@v4
         with:
           name: laras-desktop-windows-x86_64
