@@ -507,9 +507,11 @@ beberapa instance di belakang nginx.
 | P1 | Referensi MP3/WAV lain dikonversi otomatis ✅ |
 | P1 | Pengaman runtime: token, batas laju, antrean, timeout, batas body ✅ |
 | P1 | Tes level HTTP lewat `Service::oneshot` (rute asli, tanpa buka port) ✅ |
-| P1 | Tag `v0.2.0`: pengaman runtime + tes HTTP |
+| P1 | Tag `v0.2.0`: pengaman runtime + tes HTTP ✅ |
+| P1 | Tag `v0.2.1`: image amd64+arm64, halaman depan `GET /` ✅ |
 | P1 | Latih ulang dengan kosakata 8–16 ribu — akar masalah artikulasi |
-| P2 | HF Spaces demo (referensi suara sintetis, bukan suara pribadi) |
+| P2 | Demo dengar publik dari sampel statis ✅ |
+| P3 | Demo ketik-sendiri di HF Space — bundel + skrip siap, tapi Docker Space menuntut akun PRO (HTTP 402) |
 | P2 | Pool worker + `SO_REUSEPORT` |
 | P2 | Resampler polifase (kualitas akustik lebih baik) |
 | P3 | SDK Rust / Python / JavaScript |
