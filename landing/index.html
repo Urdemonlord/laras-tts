@@ -8,7 +8,14 @@
 <meta property="og:title" content="Laras — TTS Bahasa Indonesia tanpa GPU">
 <meta property="og:description" content="Kloning suara dari 10–15 detik rekaman. Satu binary Rust, CPU-first, streaming per kalimat.">
 <meta property="og:type" content="website">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/logo.png">
+<meta property="og:image" content="https://laras.meowlabs.id/assets/og.png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:site_name" content="Laras">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://laras.meowlabs.id/assets/og.png">
 <style>
   :root {
     --bg: #0b0e14;
@@ -38,7 +45,11 @@
     border-bottom: 1px solid var(--garis);
   }
   nav .bungkus { display: flex; align-items: center; gap: 24px; height: 60px; }
-  .merek { font-weight: 700; letter-spacing: -.02em; font-size: 1.05rem; color: var(--teks); }
+  .merek {
+    display: inline-flex; align-items: center; gap: 9px;
+    font-weight: 700; letter-spacing: -.02em; font-size: 1.05rem; color: var(--teks);
+  }
+  .merek img { width: 32px; height: 32px; display: block; }
   .merek span { color: var(--aksen); }
   nav .tautan { display: flex; gap: 20px; margin-left: auto; font-size: .9rem; }
   nav .tautan a { color: var(--redup); }
@@ -52,6 +63,7 @@
     color: var(--aksen2); border: 1px solid #1d3b2a; background: #0f1c16;
     padding: 4px 12px; border-radius: 999px; margin-bottom: 20px;
   }
+  .hero-logo { width: 84px; height: auto; display: block; margin: 0 0 24px; }
   h1 {
     font-size: clamp(2.1rem, 5.2vw, 3.4rem); line-height: 1.1;
     letter-spacing: -.035em; margin: 0 0 20px; font-weight: 700;
@@ -165,7 +177,7 @@
 
 <nav>
   <div class="bungkus">
-    <span class="merek">Laras<span>.</span></span>
+    <span class="merek"><img src="assets/logo.png" alt="" width="32" height="32">Laras<span>.</span></span>
     <div class="tautan">
       <a href="#unduh">Unduh</a>
       <a href="#dengar">Dengar</a>
@@ -179,6 +191,7 @@
 
 <header>
   <div class="bungkus">
+    <img class="hero-logo" src="assets/logo.png" alt="Logo Laras" width="84" height="87">
     <span class="label">● v0.2.1 — amd64 &amp; arm64</span>
     <h1>Suara Bahasa Indonesia<br>yang jalan di <em>CPU</em>.</h1>
     <p class="pimpin">
