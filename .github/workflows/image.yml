@@ -50,6 +50,7 @@ jobs:
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - name: Build (dan push kalau tag/dispatch)
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -65,18 +66,25 @@ jobs:
       # harus tetap sampai tahap memuat model — kalau glibc/libstdc++ runtime
       # tidak cocok, prosesnya mati lebih awal dengan "GLIBC_2.xx not found".
       - name: Uji image bisa jalan
-        if: github.event_name == 'pull_request'
         env:
-          # Tag berasal dari docker/metadata-action (repo + ref), bukan input pengguna;
-          # tetap dilewatkan lewat env supaya tidak pernah diinterpolasi ke shell.
+          # Semua nilai di bawah berasal dari context GitHub / metadata-action,
+          # bukan input pengguna; dilewatkan via env agar tidak diinterpolasi shell.
           TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          EVENT: ${{ github.event_name }}
         run: |
           set -eu
-          TAG="$(printf '%s\n' "$TAGS" | head -n1)"
-          echo "image: $TAG"
+          if [ "$EVENT" = "pull_request" ]; then
+            REF="$(printf '%s\n' "$TAGS" | head -n1)"
+          else
+            # Verifikasi artefak yang benar-benar sudah di-push, bukan build lokal.
+            REF="$IMAGE@$DIGEST"
+            docker pull "$REF" > /dev/null
+          fi
+          echo "image: $REF"
 
           echo "--- dependensi dinamis di dalam image"
-          docker run --rm --entrypoint sh "$TAG" -c '
+          docker run --rm --entrypoint sh "$REF" -c '
             ldd /usr/local/bin/laras
             echo "glibc runtime: $(ldd --version | head -1)"
             echo "glibc diminta binary: $(strings /usr/local/bin/laras | grep -oE "GLIBC_2\.[0-9]+" | sort -uV | tail -1)"
@@ -85,7 +93,7 @@ jobs:
 
           echo "--- jalankan tanpa model: harus gagal saat memuat model, bukan saat link"
           mkdir -p /tmp/kosong
-          docker run --rm -e MODELS_DIR=/tmp/kosong -e CACHE_DIR=/tmp/cache "$TAG" > /tmp/out.log 2>&1 || true
+          docker run --rm -e MODELS_DIR=/tmp/kosong -e CACHE_DIR=/tmp/cache "$REF" > /tmp/out.log 2>&1 || true
           tail -5 /tmp/out.log
           grep -q "gagal memuat model" /tmp/out.log
           ! grep -qE "GLIBC_[0-9.]+ not found|error while loading shared libraries" /tmp/out.log
