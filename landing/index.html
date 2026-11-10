@@ -63,7 +63,10 @@
     color: var(--aksen2); border: 1px solid #1d3b2a; background: #0f1c16;
     padding: 4px 12px; border-radius: 999px; margin-bottom: 20px;
   }
-  .hero-logo { width: 84px; height: auto; display: block; margin: 0 0 24px; }
+  .hero-banner {
+    display: block; width: 100%; max-width: 480px; height: auto;
+    margin: 0 0 30px; mix-blend-mode: screen;
+  }
   h1 {
     font-size: clamp(2.1rem, 5.2vw, 3.4rem); line-height: 1.1;
     letter-spacing: -.035em; margin: 0 0 20px; font-weight: 700;
@@ -191,7 +194,7 @@
 
 <header>
   <div class="bungkus">
-    <img class="hero-logo" src="assets/logo.png" alt="Logo Laras" width="84" height="87">
+    <img class="hero-banner" src="assets/banner.png" alt="Laras — Open-source Voice Synthesis Engine" width="480" height="201">
     <span class="label">● v0.2.1 — amd64 &amp; arm64</span>
     <h1>Suara Bahasa Indonesia<br>yang jalan di <em>CPU</em>.</h1>
     <p class="pimpin">
