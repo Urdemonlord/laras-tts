@@ -1,0 +1,26 @@
+[package]
+name = "laras-desktop"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92"
+description = "Aplikasi desktop Laras — TTS Bahasa Indonesia tanpa terminal"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# `protocol-asset` dipakai untuk memutar WAV hasil sintesis langsung dari
+# berkas di cache aplikasi (bukan base64 lewat IPC yang boros).
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+laras = { path = "../..", features = ["onnx"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

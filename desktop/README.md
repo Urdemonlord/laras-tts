@@ -1,0 +1,85 @@
+# Laras desktop
+
+Muka tipis di atas pustaka `laras`. Tidak ada server HTTP, tidak ada port, dan
+tidak ada proses Python: mesin ONNX dimuat di dalam proses aplikasi, lalu setiap
+permintaan sintesis memanggil `laras::native` — jalur yang sama persis dengan
+`POST /tts` di gateway. Hasilnya identik, hanya tanpa jaringan.
+
+```
+desktop/
+├── ui/                 # antarmuka (HTML + CSS + JS, tanpa bundler/npm)
+│   ├── index.html
+│   ├── app.js
+│   └── gaya.css
+└── src-tauri/          # aplikasi Rust (Tauri v2)
+    ├── Cargo.toml
+    ├── build.rs
+    ├── tauri.conf.json
+    ├── icons/
+    └── src/main.rs     # perintah: status, siapkan, sintesis, pilih_*, simpan_wav
+```
+
+## Kenapa Tauri, bukan Electron
+
+Tauri memakai webview yang sudah ada di sistem (WebKitGTK di Linux, WebView2 di
+Windows, WKWebView di macOS) dan memanggil Rust langsung. Electron membawa
+Chromium sendiri: ±150 MB sebelum satu baris kode aplikasi ditulis, dan mesin
+Laras harus dijalankan sebagai proses terpisah di belakang port lokal.
+
+Konsekuensinya: **aplikasi ini butuh webview sistem**. Di Linux artinya paket
+`webkit2gtk-4.1` (GNOME/KDE modern sudah punya).
+
+## Prasyarat
+
+| Kebutuhan | Linux | Catatan |
+|---|---|---|
+| Rust ≥ 1.92 | `rustup` | |
+| WebKitGTK 4.1 | `libwebkit2gtk-4.1-dev` | runtime: `libwebkit2gtk-4.1-0` |
+| GTK 3 | `libgtk-3-dev` | |
+| librsvg | `librsvg2-dev` | ikon bundel |
+| `cmake` | `cmake` | dipakai `onnxruntime` saat build |
+| `ffmpeg` | `ffmpeg` | konversi MP3/m4a → WAV |
+| Model | `./scripts/unduh-model.sh` | ±160 MB, sekali saja |
+
+Debian/Ubuntu:
+
+```bash
+sudo apt install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+  libayatana-appindicator3-dev libsoup-3.0-dev cmake ffmpeg
+```
+
+## Bangun
+
+```bash
+cd desktop/src-tauri
+cargo build --release      # binary: target/release/laras-desktop
+```
+
+Untuk paket `.deb` / AppImage (butuh CLI Tauri sekali pasang):
+
+```bash
+cargo install tauri-cli --version "^2" --locked
+cd desktop/src-tauri && cargo tauri build
+```
+
+## Model dan referensi suara
+
+Aplikasi mencari, berurutan:
+
+1. `MODELS_DIR` / `REF_WAV` dari lingkungan,
+2. `~/.local/share/laras/models` dan `~/.local/share/laras/ref/suara.mp3`,
+3. `data/models` dan `data/ref/suara.mp3` relatif ke direktori kerja.
+
+Kalau tidak ketemu, panel **Pengaturan** terbuka dan kamu bisa menunjuk folder
+sendiri. Tidak ada unduhan tersembunyi di dalam aplikasi — model diunduh lewat
+skrip yang bisa kamu baca (`scripts/unduh-model.sh`, memverifikasi sha256).
+
+## Batasan yang sama dengan gateway
+
+Aplikasi ini tidak memperbaiki model. Artikulasi gugus konsonan tetap lemah
+karena kosakata tokenizer 4.000 kata, tempo tetap mengikuti rekaman referensi,
+dan teks panjang tetap dipecah per kalimat. Yang berbeda hanya kemasannya.
+
+Satu take per permintaan: di desktop orang menunggu di depan layar, jadi waktu
+tunggu lebih penting daripada variasi. Memilih di antara beberapa take butuh
+penilai ASR (fitur `asr`), yang tidak dibundel di sini.

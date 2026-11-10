@@ -248,6 +248,44 @@ curl -s --get localhost:8080/normalize --data-urlencode 'text=Diskon 25% jadi Rp
 # {"input":"...","normalized":"Diskon dua puluh lima persen jadi delapan puluh sembilan ribu sembilan ratus rupiah","lang":"id"}
 ```
 
+## Halaman produk
+
+`landing/` berisi halaman statis yang terbit di **<https://laras.meowlabs.id>** —
+satu berkas HTML, tanpa bundler, tanpa font atau JS pihak ketiga. Isinya contoh
+suara, cara pasang, tabel API, dan bagian batas model yang ditulis apa adanya.
+
+```bash
+scripts/deploy-landing.sh      # rsync + nginx -t + reload + verifikasi 200
+```
+
+Sampel di `landing/assets/` disintesis Laras dari referensi Common Voice **CC0**,
+bukan rekaman pribadi siapa pun. Penjaga CI yang menolak berkas suara
+ter-commit memberi pengecualian eksplisit untuk folder itu.
+
+## Aplikasi desktop
+
+`desktop/` adalah aplikasi Tauri yang memanggil pustaka `laras` **langsung di
+dalam prosesnya** — tanpa port, tanpa server yang harus dijalankan lebih dulu.
+Yang dipakai adalah jalur `laras::native` yang sama dengan `POST /tts`, jadi
+hasilnya identik.
+
+```bash
+cd desktop/src-tauri
+cargo build --release           # butuh webkit2gtk-4.1 + ffmpeg
+./target/release/laras-desktop
+```
+
+Ada juga mode tanpa jendela untuk skrip dan mesin tanpa layar:
+
+```bash
+laras-desktop --sintesis "Halo, apa kabar?" --keluar halo.wav
+```
+
+Rincian prasyarat, penempatan model, dan batasannya ada di
+[`desktop/README.md`](desktop/README.md). Build aplikasi desktop **tidak**
+dilakukan di VPS produksi — CI yang memeriksa, dan bundel `.deb`/AppImage
+dibangun terpisah.
+
 ## Demo publik
 
 Ada dua cara orang bisa mendengar Laras tanpa memasang apa pun.

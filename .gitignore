@@ -31,3 +31,8 @@ __pycache__/
 
 # log build lokal
 *.log
+
+# Aplikasi desktop (Tauri)
+/desktop/src-tauri/target/
+/desktop/src-tauri/gen/
+/target-desktop/

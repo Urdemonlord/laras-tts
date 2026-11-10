@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Laras</title>
+<link rel="stylesheet" href="gaya.css">
+</head>
+<body>
+
+<header>
+  <div class="kiri">
+    <span class="merek">Laras<span>.</span></span>
+    <span class="pil" id="status-pil"><i></i><span id="status-teks">memeriksa…</span></span>
+  </div>
+  <button class="polos" id="tombol-setup" title="Pengaturan mesin">Pengaturan</button>
+</header>
+
+<!-- ------------------------------------------------------------- pengaturan -->
+<section id="panel-setup" hidden>
+  <div class="baris">
+    <label for="jalur-models">Folder model</label>
+    <div class="isi">
+      <input id="jalur-models" type="text" spellcheck="false" placeholder="/path/ke/data/models">
+      <button class="polos" id="pilih-models">Pilih…</button>
+    </div>
+    <p class="bantuan" id="bantuan-models">Harus berisi <code>config.json</code>. Jalankan <code>./scripts/unduh-model.sh</code> sekali.</p>
+  </div>
+
+  <div class="baris">
+    <label for="jalur-suara">Rekaman referensi</label>
+    <div class="isi">
+      <input id="jalur-suara" type="text" spellcheck="false" placeholder="/path/ke/suara.wav">
+      <button class="polos" id="pilih-suara">Pilih…</button>
+    </div>
+    <p class="bantuan" id="bantuan-suara">10–15 detik, satu pembicara, tanpa musik latar.</p>
+  </div>
+
+  <button class="utama" id="tombol-muat">Muat mesin</button>
+  <p class="bantuan" id="info-cpu"></p>
+</section>
+
+<!-- ------------------------------------------------------------------- isi -->
+<main>
+  <textarea id="teks" rows="7" spellcheck="false" placeholder="Tulis atau tempel teks Bahasa Indonesia di sini…">Halo, saya Laras. Saya membaca teks Bahasa Indonesia dengan suara yang mengikuti rekaman referensi.</textarea>
+
+  <div class="baris-aksi">
+    <button class="utama" id="tombol-buat">Buat suara</button>
+    <span class="hint">Ctrl + Enter</span>
+    <span class="kanan" id="hitung">0 karakter</span>
+  </div>
+
+  <div id="pesan" class="pesan" hidden></div>
+
+  <div id="hasil" class="hasil" hidden>
+    <audio id="pemutar" controls preload="metadata"></audio>
+    <div class="meta">
+      <span id="meta-durasi">—</span>
+      <span id="meta-waktu">—</span>
+      <span class="kanan">
+        <button class="polos" id="tombol-simpan">Simpan WAV…</button>
+        <button class="polos" id="tombol-folder">Buka folder</button>
+      </span>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span id="versi">Laras</span>
+  <span class="kanan">Berjalan sepenuhnya di mesin ini · tanpa jaringan</span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

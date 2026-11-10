@@ -12,7 +12,9 @@
 //! Tanpa fitur `onnx`, build tetap jalan memakai `worker.py` sebagai backend
 //! cadangan supaya kontrak HTTP bisa diuji tanpa runtime ONNX.
 
-mod lang;
+// Modul yang sama dipakai oleh pustaka `laras` (lihat `src/lib.rs`), supaya
+// gateway HTTP dan aplikasi desktop berbagi satu jalur sintesis.
+use laras::lang;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -31,10 +33,10 @@ use sha2::{Digest, Sha256};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 #[cfg(feature = "onnx")]
-mod native;
+use laras::native;
 
 #[cfg(feature = "asr")]
-mod asr;
+use laras::asr;
 
 // --------------------------------------------------------------- backend
 

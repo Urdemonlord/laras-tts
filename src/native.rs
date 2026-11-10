@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::lang::{self, Lang};
+use crate::onnx::{wav, Best, Diag, Engine, Params};
 use anyhow::{Context, Result};
-use laras::onnx::{wav, Best, Diag, Engine, Params};
 
 #[cfg(feature = "asr")]
 use crate::asr::Asr;
@@ -84,7 +84,7 @@ impl Native {
     }
 
     /// Pastikan referensi `path` sudah menjadi conditioning aktif.
-    fn use_voice(&mut self, path: &str) -> Result<()> {
+    pub fn use_voice(&mut self, path: &str) -> Result<()> {
         if self.voice_key.as_deref() == Some(path) {
             return Ok(());
         }
@@ -166,7 +166,7 @@ impl Native {
                 .fold(0usize, |bi, (i, w)| if *w < nilai[bi] { i } else { bi })
         } else {
             // Tanpa skor ASR, pakai medoid latent seperti bawaan mesin.
-            laras::onnx::medoid_index(&cands)
+            crate::onnx::medoid_index(&cands)
         };
         let best = Best { index, cands };
         let dipakai = best.cands.len();

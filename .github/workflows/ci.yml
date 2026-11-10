@@ -63,6 +63,28 @@ jobs:
       - run: cargo test --features onnx,asr
       - run: cargo build --release --features onnx,asr
 
+  # Aplikasi desktop memakai WebKitGTK, yang tidak ada di image `ubuntu-latest`
+  # default. Yang diperiksa di sini: kode Rust-nya masih cocok dengan API Tauri
+  # dan pustaka `laras` — bukan bundel .deb/AppImage.
+  desktop:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "desktop/src-tauri -> target"
+      - name: Dependensi WebKitGTK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            librsvg2-dev libsoup-3.0-dev
+      - run: cargo clippy --manifest-path desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+      - run: cargo build --manifest-path desktop/src-tauri/Cargo.toml
+
   python:
     runs-on: ubuntu-latest
     steps:
@@ -96,7 +118,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Tolak berkas suara yang tidak sengaja ter-commit
         run: |
-          found=$(git ls-files '*.wav' '*.mp3' '*.m4a' '*.ogg' '*.webm' | grep -v '^tests/fixtures/' || true)
+          # Dua pengecualian, keduanya sadar:
+          #   tests/fixtures/ — berkas uji yang isinya bukan suara siapa pun
+          #   landing/assets/ — tiga sampel demo yang disintesis Laras dari
+          #     referensi Common Voice CC0; bukan rekaman pribadi (lihat ETHICS.md)
+          found=$(git ls-files '*.wav' '*.mp3' '*.m4a' '*.ogg' '*.webm' \
+            | grep -v -e '^tests/fixtures/' -e '^landing/assets/' || true)
           if [ -n "$found" ]; then
             echo "Berkas suara tidak boleh di-commit (lihat ETHICS.md):"
             echo "$found"
