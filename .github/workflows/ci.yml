@@ -73,13 +73,20 @@ jobs:
       - run: pip install ruff
       - run: ruff check worker.py norm_id.py
       - run: python -c "import ast; [ast.parse(open(f).read()) for f in ('worker.py','norm_id.py')]"
-      # Skrip unduh model: pastikan sintaksnya sah dan `--cek` benar-benar
-      # menolak direktori kosong (kode keluar 1), bukan diam-diam lolos.
-      - name: Skrip unduh model
+      # Skrip shell: sintaksnya sah, dan `--cek` benar-benar menolak direktori
+      # kosong (kode keluar 1) — bukan diam-diam lolos.
+      - name: Skrip shell
         run: |
           bash -n scripts/unduh-model.sh
+          bash -n scripts/terbitkan-space.sh
+          bash -n scripts/uji-image.sh
           if scripts/unduh-model.sh --cek --dir /tmp/kosong --tanpa-ref; then
             echo "::error::--cek seharusnya gagal untuk direktori kosong"
+            exit 1
+          fi
+          # Skrip penerbit Space harus menolak jalan tanpa --user.
+          if scripts/terbitkan-space.sh >/dev/null 2>&1; then
+            echo "::error::terbitkan-space.sh seharusnya menolak tanpa --user"
             exit 1
           fi
 

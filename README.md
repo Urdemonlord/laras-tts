@@ -260,19 +260,18 @@ Common Voice **CC0** supaya bukan suara pribadi siapa pun, dan batas laju
 dipasang karena CPU Space dipakai bersama.
 
 ```bash
-# sekali saja
 pip install -U "huggingface_hub[cli]"
-huggingface-cli login          # butuh token dengan izin tulis
-
-# buat Space-nya (ganti <user> dengan akunmu)
-huggingface-cli repo create laras-tts --type space --space-sdk docker
-git clone https://huggingface.co/spaces/<user>/laras-tts hf-space
-cp demo/hf-space/Dockerfile demo/hf-space/README.md hf-space/
-cd hf-space && git add -A && git commit -m "demo Laras" && git push
+hf auth login                      # token dengan izin tulis
+scripts/terbitkan-space.sh --user <akun-hf>
 ```
 
+Skrip itu membuat Space, menyalin bundel, push, lalu menunggu sampai statusnya
+`RUNNING` (build pertama 8–12 menit). `--tag` memilih rilis yang dipakai
+sebagai basis image; `--nama` mengganti nama Space.
+
 Space membangun image-nya sendiri dari `ghcr.io/urdemonlord/laras-tts` — tidak
-perlu build lokal dan tidak perlu GPU.
+perlu build lokal dan tidak perlu GPU. Token tidak pernah masuk ke URL git atau
+argv: ditulis ke berkas sementara 600 lalu dibaca credential helper.
 
 ## Benchmark
 
