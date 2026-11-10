@@ -67,3 +67,52 @@ jobs:
           path: desktop/src-tauri/target/release/laras-desktop
           if-no-files-found: error
           retention-days: 14
+
+  # ---------------------------------------------------------------- windows
+  # Artefak .exe untuk diuji di laptop pengguna. Tetap dibangun di runner,
+  # tidak pernah di VPS produksi (box itu cuma 3,7 GB dan sudah pernah OOM).
+  # WebView2 sudah tersedia di windows-latest, jadi tidak ada dependensi sistem
+  # tambahan seperti libwebkit2gtk di Linux.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "desktop/src-tauri -> target"
+
+      - name: Bangun (release)
+        run: cargo build --release --manifest-path desktop/src-tauri/Cargo.toml
+
+      - name: Uji mode kepala tanpa model
+        # Sama seperti job Linux: teks kosong harus ditolak dengan kode 2,
+        # membuktikan argumen terbaca dan binary jalan tanpa jendela.
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath ".\desktop\src-tauri\target\release\laras-desktop.exe" `
+            -ArgumentList '--sintesis ""' -Wait -PassThru -NoNewWindow
+          Write-Host "kode keluar: $($p.ExitCode)"
+          if ($p.ExitCode -ne 2) { exit 1 }
+
+      - name: Kumpulkan berkas
+        # ONNX Runtime bisa ikut sebagai DLL; ambil semua yang ada di samping exe
+        # supaya paketnya bisa dijalankan tanpa memasang apa pun.
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item .\desktop\src-tauri\target\release\laras-desktop.exe out\
+          Get-ChildItem .\desktop\src-tauri\target\release -Filter *.dll -File -ErrorAction SilentlyContinue |
+            Copy-Item -Destination out\
+          Get-ChildItem out | Select-Object Name, Length | Format-Table
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: laras-desktop-windows-x86_64
+          path: out/
+          if-no-files-found: error
+          retention-days: 14
