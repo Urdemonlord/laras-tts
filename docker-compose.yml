@@ -1,14 +1,24 @@
+# Pakai image rilis dari ghcr — tidak ada build lokal. Image dibangun di CI
+# (.github/workflows/image.yml), karena base image Rust ±1,2 GB tidak cocok
+# untuk mesin kecil.
+#
+# Siapkan data dulu:
+#   scripts/unduh-model.sh          # bobot ONNX + contoh referensi CC0
+#   docker compose up -d
 services:
   laras:
-    build: .
-    image: laras-tts:latest
+    image: ghcr.io/urdemonlord/laras-tts:0.1.1
     ports:
       - "8080:8080"
     volumes:
-      # isi: models/ (5 graf ONNX + tokenizer.model + bos_before_voice.npy),
-      #      ref/suara.wav (10-15 detik), cache/
+      # isi: models/ (5 graf ONNX + tokenizer.model + bos_before_voice.npy + bundle.json),
+      #      ref/ (10–15 detik; WAV atau MP3 — MP3 dikonversi otomatis lewat ffmpeg),
+      #      cache/
       - ./data:/data
     environment:
+      MODELS_DIR: "/data/models"
+      REF_WAV: "/data/ref/suara.mp3"
+      CACHE_DIR: "/data/cache"
       LARAS_LANG: "id"
       TAKES: "3"        # kandidat per permintaan; dipilih otomatis tanpa ASR
       TEMP: "0.1"       # temperatur sampling latent

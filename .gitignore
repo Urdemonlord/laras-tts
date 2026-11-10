@@ -28,3 +28,6 @@ __pycache__/
 
 # Data runtime (model, cache, referensi suara)
 /data
+
+# log build lokal
+*.log

@@ -75,7 +75,7 @@ fn run() -> Result<()> {
     };
 
     let t0 = Instant::now();
-    let samples = wav::read_mono(&ref_path)?;
+    let samples = wav::read_mono_auto(&ref_path)?;
     let dur_ref = samples.len() as f32 / SAMPLE_RATE as f32;
     eng.set_voice(&samples)?;
     let t_voice = t0.elapsed().as_secs_f32();

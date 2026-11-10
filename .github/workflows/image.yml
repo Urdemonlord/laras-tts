@@ -89,8 +89,20 @@ jobs:
           docker run --rm --entrypoint sh "$REF" -c '
             ldd /usr/local/bin/laras
             echo "glibc runtime: $(ldd --version | head -1)"
-            echo "glibc diminta binary: $(grep -aoE 'GLIBC_2\.[0-9]+' /usr/local/bin/laras | sort -uV | tail -1)"
+            echo "glibc diminta binary: $(grep -aoE "GLIBC_2\.[0-9]+" /usr/local/bin/laras | sort -uV | tail -1)"
             ! ldd /usr/local/bin/laras | grep -q "not found"
+          '
+
+          # Referensi suara dari Common Voice berformat MP3. Tanpa ffmpeg di
+          # dalam image, konversi otomatis gagal dan pengguna harus memasang
+          # alat tambahan sendiri — persis masalah yang ingin dihindari.
+          echo "--- ffmpeg tersedia dan bisa mengonversi mp3"
+          docker run --rm --entrypoint sh "$REF" -c '
+            set -eu
+            ffmpeg -version | head -1
+            ffmpeg -y -v error -f lavfi -i sine=duration=0.2 -ar 48000 -ac 1 /tmp/uji.mp3
+            ffmpeg -y -v error -i /tmp/uji.mp3 -ar 24000 -ac 1 /tmp/uji.wav
+            test -s /tmp/uji.wav
           '
 
           echo "--- jalankan tanpa model: harus gagal saat memuat model, bukan saat link"

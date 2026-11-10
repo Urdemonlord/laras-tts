@@ -19,8 +19,11 @@ RUN cargo build --release --features onnx
 # ---- runtime: debian minimal, hanya satu binary ----
 FROM debian:trixie-slim
 
+# ffmpeg bukan hiasan: referensi suara dari Common Voice berformat MP3, dan
+# `read_mono_auto` mengonversinya ke WAV 24 kHz mono lewat ffmpeg. Tanpa ini,
+# pengguna harus mengonversi sendiri sebelum container mau bicara.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl \
+ && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /src/target/release/laras /usr/local/bin/laras
@@ -28,7 +31,7 @@ COPY --from=build /src/target/release/laras /usr/local/bin/laras
 ENV BIND=0.0.0.0 \
     PORT=8080 \
     MODELS_DIR=/data/models \
-    REF_WAV=/data/ref/suara.wav \
+    REF_WAV=/data/ref/suara.mp3 \
     CACHE_DIR=/data/cache \
     LARAS_LANG=id \
     TAKES=3 \

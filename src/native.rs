@@ -92,8 +92,10 @@ impl Native {
             if self.voices.len() >= VOICE_CACHE_MAX {
                 self.voices.clear();
             }
-            let samples = wav::read_mono(Path::new(path))
-                .with_context(|| format!("membaca referensi {path}"))?;
+            // `read_mono_auto` menerima WAV apa pun dan mengonversi mp3/m4a/ogg
+            // lewat ffmpeg, supaya referensi tidak harus disiapkan manual dulu.
+            let samples = wav::read_mono_auto(Path::new(path))
+                .with_context(|| format!("menyiapkan referensi {path}"))?;
             if samples.is_empty() {
                 anyhow::bail!("referensi {path} kosong");
             }

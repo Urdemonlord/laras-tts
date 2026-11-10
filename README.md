@@ -81,16 +81,8 @@ Bahasa dipilih saat runtime: `LARAS_LANG=id` (default).
 
 ```bash
 git clone https://github.com/Urdemonlord/laras-tts && cd laras-tts
-mkdir -p data/ref
-ffmpeg -i rekaman.m4a -ar 24000 -ac 1 data/ref/suara.wav   # 10-15 detik
-docker compose up --build
-```
-
-> Bobot `kyutai/pocket-tts` di Hugging Face **gated**: kamu perlu login dan
-> menyetujui lisensinya sekali sebelum unduhan pertama berhasil
-> (`huggingface-cli login`).
-
-```bash
+scripts/unduh-model.sh          # bobot ONNX + contoh referensi CC0 (±160 MB)
+docker compose up -d            # image dari ghcr, tidak build lokal
 curl -X POST localhost:8080/tts -H 'content-type: application/json' \
   -d '{"text":"Harga saham naik 15 persen menjadi Rp 12.500 per lembar pada 2026."}' \
   -o hasil.wav -D -
@@ -99,6 +91,44 @@ curl -X POST localhost:8080/tts -H 'content-type: application/json' \
 
 Contoh lengkap: [`examples/curl.sh`](examples/curl.sh).
 
+### Menyiapkan model
+
+`scripts/unduh-model.sh` mengunduh 9 berkas dari
+[`anak10thn/pocket-tts-indonesian`](https://huggingface.co/anak10thn/pocket-tts-indonesian)
+dan **memverifikasi sha256** tiap berkas. Kalau hash-nya tidak cocok, skrip
+berhenti dengan kode 1 — tidak ada unduhan setengah jadi yang diam-diam dipakai.
+
+```bash
+scripts/unduh-model.sh --cek          # hanya verifikasi yang sudah ada
+scripts/unduh-model.sh --tanpa-ref    # model saja
+scripts/unduh-model.sh --dir /data/models --ref-dir /data/ref
+```
+
+| Berkas | Ukuran |
+|---|---|
+| `flow_lm_main_int8.onnx` | 72,4 MB |
+| `mimi_encoder.onnx` | 37,4 MB |
+| `mimi_decoder_int8.onnx` | 21,6 MB |
+| `text_conditioner.onnx` | 15,6 MB |
+| `flow_lm_flow_int8.onnx` | 9,5 MB |
+| `tokenizer.model`, `bos_before_voice.npy`, `bundle.json`, `VALIDATION.txt` | < 0,4 MB |
+
+Repo Hugging Face-nya publik, jadi tidak perlu login. (Bobot asli
+`kyutai/pocket-tts` **gated** — itu hanya relevan kalau kamu mau mengekspor
+graf ONNX sendiri.)
+
+### Referensi suara
+
+`REF_WAV` menerima **WAV, MP3, m4a, ogg, flac**. Selain WAV dikonversi otomatis
+ke WAV 24 kHz mono lewat `ffmpeg` (sekali saja; hasilnya dipakai ulang selama
+berkasnya tidak berubah). Kalau `ffmpeg` tidak ada, galatnya menyebutkan
+perintah konversi manual — bukan sekadar "hanya WAV yang didukung".
+
+Contoh referensi dari skrip di atas berasal dari Common Voice 22.0 Indonesia,
+**CC0**, 48 kHz mono ±4,7 detik. Untuk suara sendiri, rekam 10–15 detik tanpa
+musik latar. Prompt 48 kHz menghasilkan kloning yang jauh lebih mirip daripada
+audio 16 kHz yang dikompresi.
+
 ## Pakai image Docker
 
 Image publik, dibangun di CI (bukan di mesin-mesinmu):
@@ -106,13 +136,13 @@ Image publik, dibangun di CI (bukan di mesin-mesinmu):
 ```bash
 docker run --rm -p 8080:8080 \
   -v "$PWD/data:/data" \
-  ghcr.io/urdemonlord/laras-tts:0.1.0
+  ghcr.io/urdemonlord/laras-tts:0.1.1
 ```
 
 Image hanya berisi satu binary native (ONNX Runtime ter-link statis, tanpa
-Python). Yang perlu disediakan di volume `/data`: graf ONNX di
-`/data/models` dan rekaman referensi di `/data/ref/suara.wav` — lihat tabel
-[Konfigurasi](#konfigurasi). Tanpa keduanya proses berhenti dengan
+Python) plus `ffmpeg` untuk konversi referensi. Yang perlu disediakan di volume
+`/data`: graf ONNX di `/data/models` dan rekaman referensi di `/data/ref/` —
+lihat tabel [Konfigurasi](#konfigurasi). Tanpa model, proses berhenti dengan
 `gagal memuat model ONNX`.
 
 Base image `debian:trixie-slim` dipilih karena binary menuntut `GLIBC_2.38`;
@@ -235,7 +265,7 @@ Waktu respons HTTP (4 vCPU, `takes=3`):
 | `BIND` | `127.0.0.1` | alamat bind (`0.0.0.0` di Docker) |
 | `PORT` | `8080` | port HTTP |
 | `LARAS_LANG` | `id` | profil bahasa (`src/lang/`) |
-| `REF_WAV` | `data/ref/suara.wav` | referensi suara default |
+| `REF_WAV` | `data/ref/suara.wav` | referensi suara default; WAV/MP3/m4a/ogg, selain WAV dikonversi otomatis |
 | `TAKES` | `3` | jumlah take untuk best-of-N; 5 = lebih bersih, ±21 s per kalimat sulit |
 | `CHUNK` | `1` | pecah teks per kalimat sebelum sintesis; `0` = satu lintasan |
 | `CHUNK_MIN_WORDS` | `20` | teks ≤ sekian kata tidak dipecah (tetap best-of-N + ASR) |
@@ -329,21 +359,20 @@ Untuk memeriksa satu berkas: `cargo run --release --bin lufs -- hasil.wav -18 -1
 klien ──HTTP──> laras (Rust/axum)
                   │ 1. profil bahasa: normalisasi + perbaikan fonem
                   │ 2. pecah per kalimat (CHUNK), cache sha256(teks|voice|takes)
-                  │ 3. serialisasi ke satu worker
+                  │ 3. serialisasi ke satu backend
                   ▼
-               worker.py (Python, model tetap di RAM)
+               ONNX Runtime di dalam proses (default, fitur `onnx`)
                   │ 4. chunking per kalimat
                   │ 5. generate N take
-                  │ 6. pilih WER terendah
+                  │ 6. pilih WER terendah (kalau ASR aktif)
                   ▼
                WAV 24 kHz mono
 ```
 
-**Kenapa Rust + Python?** Inferensi masih butuh PyTorch/Pocket TTS yang hanya
-tersedia di Python. Yang di Rust adalah bagian yang menentukan pengalaman API:
-parsing, normalisasi, cache, orkestrasi. Kontrak HTTP-nya stabil, jadi engine
-bisa ditukar tanpa mengubah klien — dan itu memang rencananya: ONNX Runtime di
-Rust, lalu Python hilang dari dependency.
+Backend Python (`worker.py`) masih ada sebagai jalur cadangan dan alat
+eksperimen — dipakai kalau binary dibangun **tanpa** fitur `onnx`. Di image
+rilis, Python tidak ada sama sekali: satu binary, satu proses, ONNX Runtime
+ter-link statis.
 
 **Kenapa satu worker?** Model 438 MB + state suara; banyak worker di mesin
 kecil bikin OOM. Antrean lebih baik daripada crash. Untuk throughput, jalankan
@@ -371,7 +400,9 @@ beberapa instance di belakang nginx.
 | P0 | Publish repo + benchmark hardware yang jelas ✅ |
 | P1 | ONNX Runtime di Rust — inferensi native ✅, penyambungan ke gateway ✅ |
 | P1 | Streaming chunked response (kirim per kalimat) ✅ |
-| P1 | Tag `v0.1.0` + image Docker publik |
+| P1 | Tag `v0.1.0` + image Docker publik ✅ |
+| P1 | Skrip unduh model + verifikasi sha256 ✅ |
+| P1 | Referensi MP3/WAV lain dikonversi otomatis ✅ |
 | P1 | Latih ulang dengan kosakata 8–16 ribu — akar masalah artikulasi |
 | P2 | HF Spaces demo (referensi suara sintetis, bukan suara pribadi) |
 | P2 | Pool worker + `SO_REUSEPORT` |

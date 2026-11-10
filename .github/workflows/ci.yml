@@ -73,6 +73,15 @@ jobs:
       - run: pip install ruff
       - run: ruff check worker.py norm_id.py
       - run: python -c "import ast; [ast.parse(open(f).read()) for f in ('worker.py','norm_id.py')]"
+      # Skrip unduh model: pastikan sintaksnya sah dan `--cek` benar-benar
+      # menolak direktori kosong (kode keluar 1), bukan diam-diam lolos.
+      - name: Skrip unduh model
+        run: |
+          bash -n scripts/unduh-model.sh
+          if scripts/unduh-model.sh --cek --dir /tmp/kosong --tanpa-ref; then
+            echo "::error::--cek seharusnya gagal untuk direktori kosong"
+            exit 1
+          fi
 
   no-voice-files:
     runs-on: ubuntu-latest

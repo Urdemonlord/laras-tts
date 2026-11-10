@@ -1,6 +1,6 @@
 BIN := target/release/laras
 
-.PHONY: all build test lint fmt run clean docker
+.PHONY: all build test lint fmt run clean docker models cek-model
 
 all: build
 
@@ -20,8 +20,14 @@ fmt:
 run: build
 	./$(BIN)
 
+models:
+	scripts/unduh-model.sh
+
+cek-model:
+	scripts/unduh-model.sh --cek
+
 docker:
-	docker compose up --build
+	docker compose up -d
 
 clean:
 	cargo clean

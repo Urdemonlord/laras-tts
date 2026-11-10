@@ -755,6 +755,18 @@ async fn main() {
         lang: bahasa,
     });
 
+    // Cek referensi lebih awal: lebih baik tahu sekarang daripada baru gagal
+    // saat permintaan pertama masuk. Tidak fatal, karena tiap permintaan boleh
+    // membawa `voice` sendiri.
+    if !std::path::Path::new(&state.ref_wav).exists() {
+        eprintln!(
+            "peringatan: referensi suara {} tidak ada.\n  \
+             ambil contoh CC0: scripts/unduh-model.sh\n  \
+             atau set REF_WAV ke rekaman sendiri (WAV/MP3, 10–15 detik).",
+            state.ref_wav
+        );
+    }
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/normalize", get(normalize_handler))
