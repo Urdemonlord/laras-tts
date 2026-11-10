@@ -136,7 +136,7 @@ Image publik, dibangun di CI (bukan di mesin-mesinmu):
 ```bash
 docker run --rm -p 8080:8080 \
   -v "$PWD/data:/data" \
-  ghcr.io/urdemonlord/laras-tts:0.2.0
+  ghcr.io/urdemonlord/laras-tts:0.2.1
 ```
 
 Image hanya berisi satu binary native (ONNX Runtime ter-link statis, tanpa
@@ -147,6 +147,12 @@ lihat tabel [Konfigurasi](#konfigurasi). Tanpa model, proses berhenti dengan
 
 Base image `debian:trixie-slim` dipilih karena binary menuntut `GLIBC_2.38`;
 di bookworm (glibc 2.36) binary tidak bisa di-link sama sekali.
+
+**Dua arsitektur**: `linux/amd64` dan `linux/arm64` dalam satu manifest, jadi
+Mac M-series, Graviton, dan Ampere menarik varian yang benar tanpa embel-embel
+`--platform`. Keduanya dibangun di runner native masing-masing lalu manifest-nya
+digabung — bukan lewat QEMU, karena emulasi build Rust sebesar ini 5–10× lebih
+lambat.
 
 ## Instalasi manual
 
@@ -222,7 +228,7 @@ tetap memakai cache `/tts` kalau ada (`x-stream: 0`).
 ### `GET /health`
 
 ```json
-{"ok":true,"engine":"laras","version":"0.2.0","lang":"id","takes":3,"default_voice":"data/ref/suara.wav"}
+{"ok":true,"engine":"laras","version":"0.2.1","lang":"id","takes":3,"default_voice":"data/ref/suara.wav"}
 ```
 
 ### `GET /normalize?text=...`

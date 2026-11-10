@@ -7,7 +7,7 @@
 #   docker compose up -d
 services:
   laras:
-    image: ghcr.io/urdemonlord/laras-tts:0.2.0
+    image: ghcr.io/urdemonlord/laras-tts:0.2.1
     ports:
       - "8080:8080"
     volumes:

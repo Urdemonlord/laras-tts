@@ -2,9 +2,23 @@ name: image
 
 # Image dibangun di runner GitHub, bukan di VPS produksi: setiap base image
 # Rust 1.9x ~1,2 GB dan setiap build gagal meninggalkan layer cache besar.
+#
+# Multi-arch (amd64 + arm64) dibangun sebagai dua job terpisah yang jalan di
+# runner native masing-masing, lalu manifest-nya digabung. Memakai QEMU akan
+# 5–10× lebih lambat untuk build Rust sebesar ini, dan `ubuntu-24.04-arm`
+# sudah tersedia untuk repo publik.
 on:
   push:
     tags: ["v*"]
+    branches: ["main"]
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/**"
+      - "scripts/uji-image.sh"
+      - ".github/workflows/image.yml"
   pull_request:
     paths:
       - "Dockerfile"
@@ -12,6 +26,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "src/**"
+      - "scripts/uji-image.sh"
       - ".github/workflows/image.yml"
   workflow_dispatch:
 
@@ -23,7 +38,74 @@ env:
   IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
-  build:
+  # ------------------------------------------------------------------ build
+  # Satu job per arsitektur, push by digest: tidak ada tag yang saling
+  # menimpa antar platform.
+  bangun:
+    if: github.event_name != 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login ke ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `github.repository` bisa mengandung huruf besar; referensi image wajib lowercase.
+      - name: Nama image huruf kecil
+        id: img
+        run: echo "ref=$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Label image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.img.outputs.ref }}
+
+      - name: Build ${{ matrix.arch }} (push by digest)
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ steps.img.outputs.ref }},push-by-digest=true,name-canonical=true,push=true
+          labels: ${{ steps.meta.outputs.labels }}
+          # Tanpa attestation: manifest tetap bersih dan `imagetools inspect`
+          # hanya menampilkan dua platform yang memang dibangun.
+          provenance: false
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      - name: Simpan digest
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  # ----------------------------------------------------------------- gabung
+  # Manifest multi-arch + smoke test pada image yang benar-benar di-push.
+  gabung:
+    needs: bangun
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,83 +113,86 @@ jobs:
       - uses: docker/setup-buildx-action@v3
 
       - name: Login ke ghcr.io
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Nama image huruf kecil
+        id: img
+        run: echo "ref=$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
       - name: Tentukan tag
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE }}
+          images: ${{ steps.img.outputs.ref }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
-      - name: Build (dan push kalau tag/dispatch)
-        id: build
+      - name: Gabung manifest amd64 + arm64
+        env:
+          DIGESTS: /tmp/digests
+          META_JSON: ${{ steps.meta.outputs.json }}
+          IMG: ${{ steps.img.outputs.ref }}
+        run: |
+          set -eu
+          cd "$DIGESTS"
+          ls -1
+          # Tag berasal dari metadata-action (bukan input pengguna), tapi tetap
+          # dilewatkan lewat env, bukan disisipkan ke skrip.
+          TAG_ARGS=$(printf '%s' "$META_JSON" | jq -r '.tags[] | "-t \(.)"')
+          # shellcheck disable=SC2086
+          docker buildx imagetools create $TAG_ARGS \
+            $(printf "$IMG@sha256:%s " *)
+
+      - name: Periksa manifest benar-benar dua arsitektur
+        env:
+          IMG: ${{ steps.img.outputs.ref }}
+          META_JSON: ${{ steps.meta.outputs.json }}
+        run: |
+          set -eu
+          REF=$(printf '%s' "$META_JSON" | jq -r '.tags[0]')
+          echo "memeriksa $REF"
+          docker buildx imagetools inspect "$REF" | tee /tmp/manifest.txt
+          grep -q "linux/amd64" /tmp/manifest.txt
+          grep -q "linux/arm64" /tmp/manifest.txt
+
+      - name: Uji image (amd64)
+        env:
+          META_JSON: ${{ steps.meta.outputs.json }}
+        run: |
+          REF=$(printf '%s' "$META_JSON" | jq -r '.tags[0]')
+          scripts/uji-image.sh "$REF"
+
+  # ------------------------------------------------------------- pull request
+  # PR tidak push apa pun: cukup buktikan image amd64 terbangun dan jalan.
+  uji-pr:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build amd64 (tanpa push)
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' }}
-          load: ${{ github.event_name == 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          load: true
+          tags: laras:pr
+          cache-from: type=gha,scope=amd64
 
-      # Build yang lolos belum tentu image yang jalan. Tanpa model ONNX, binary
-      # harus tetap sampai tahap memuat model — kalau glibc/libstdc++ runtime
-      # tidak cocok, prosesnya mati lebih awal dengan "GLIBC_2.xx not found".
-      - name: Uji image bisa jalan
-        env:
-          # Semua nilai di bawah berasal dari context GitHub / metadata-action,
-          # bukan input pengguna; dilewatkan via env agar tidak diinterpolasi shell.
-          TAGS: ${{ steps.meta.outputs.tags }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          set -eu
-          if [ "$EVENT" = "pull_request" ]; then
-            REF="$(printf '%s\n' "$TAGS" | head -n1)"
-          else
-            # Verifikasi artefak yang benar-benar sudah di-push, bukan build lokal.
-            # `github.repository` bisa mengandung huruf besar; referensi image wajib lowercase.
-            IMG="$(printf '%s' "$IMAGE" | tr '[:upper:]' '[:lower:]')"
-            REF="$IMG@$DIGEST"
-            docker pull "$REF" > /dev/null
-          fi
-          echo "image: $REF"
-
-          echo "--- dependensi dinamis di dalam image"
-          docker run --rm --entrypoint sh "$REF" -c '
-            ldd /usr/local/bin/laras
-            echo "glibc runtime: $(ldd --version | head -1)"
-            echo "glibc diminta binary: $(grep -aoE "GLIBC_2\.[0-9]+" /usr/local/bin/laras | sort -uV | tail -1)"
-            ! ldd /usr/local/bin/laras | grep -q "not found"
-          '
-
-          # Referensi suara dari Common Voice berformat MP3. Tanpa ffmpeg di
-          # dalam image, konversi otomatis gagal dan pengguna harus memasang
-          # alat tambahan sendiri — persis masalah yang ingin dihindari.
-          echo "--- ffmpeg tersedia dan bisa mengonversi mp3"
-          docker run --rm --entrypoint sh "$REF" -c '
-            set -eu
-            ffmpeg -version | head -1
-            ffmpeg -y -v error -f lavfi -i sine=duration=0.2 -ar 48000 -ac 1 /tmp/uji.mp3
-            ffmpeg -y -v error -i /tmp/uji.mp3 -ar 24000 -ac 1 /tmp/uji.wav
-            test -s /tmp/uji.wav
-          '
-
-          echo "--- jalankan tanpa model: harus gagal saat memuat model, bukan saat link"
-          mkdir -p /tmp/kosong
-          docker run --rm -e MODELS_DIR=/tmp/kosong -e CACHE_DIR=/tmp/cache "$REF" > /tmp/out.log 2>&1 || true
-          tail -5 /tmp/out.log
-          grep -q "gagal memuat model" /tmp/out.log
-          ! grep -qE "GLIBC_[0-9.]+ not found|error while loading shared libraries" /tmp/out.log
+      - name: Uji image
+        run: scripts/uji-image.sh laras:pr
