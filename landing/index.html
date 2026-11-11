@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
-<meta name="description" content="Engine text-to-speech Bahasa Indonesia yang berjalan tanpa GPU. Kloning suara dari 10–15 detik rekaman, satu binary Rust, API HTTP, dan aplikasi desktop.">
-<meta property="og:title" content="Laras — TTS Bahasa Indonesia tanpa GPU">
+<meta name="description" content="Mesin text-to-speech Bahasa Indonesia yang jalan tanpa GPU. Kloning suara dari 10–15 detik rekaman, satu binary Rust, API HTTP, dan aplikasi desktop.">
+<meta property="og:title" content="Laras · TTS Bahasa Indonesia tanpa GPU">
 <meta property="og:description" content="Kloning suara dari 10–15 detik rekaman. Satu binary Rust, CPU-first, streaming per kalimat.">
 <meta property="og:type" content="website">
 <meta property="og:image" content="https://laras.meowlabs.id/assets/og.png">
@@ -16,7 +16,7 @@
 <meta name="twitter:image" content="https://laras.meowlabs.id/assets/og.png">
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <link rel="apple-touch-icon" href="assets/logo.png">
-    <title>Laras — TTS Bahasa Indonesia, CPU-first, kloning suara</title>
+    <title>Laras · TTS Bahasa Indonesia, CPU-first, kloning suara</title>
     <style>
       :root {
         --bg: #10002b;
@@ -230,7 +230,7 @@
       .track.active .tprog { display: block; }
       .tprog i { display: block; height: 100%; width: 0%; background: var(--violet-2); }
       .deck-note { margin: 16px 0 0; font-size: .88rem; color: var(--muted); }
-      .deck-note::before { content: "CATATAN — "; color: var(--body); font-weight: 600; letter-spacing: .08em; font-size: .72rem; }
+      .deck-note::before { content: "CATATAN · "; color: var(--body); font-weight: 600; letter-spacing: .08em; font-size: .72rem; }
 
       /* ---------- features ---------- */
       .entries { display: grid; grid-template-columns: 1fr 1fr; gap: 0 48px; }
@@ -327,7 +327,7 @@
       .preset:hover, .chips button:hover { border-color: var(--violet-bright); color: #fff; }
       .preset[aria-pressed="true"] { background: var(--violet); border-color: var(--violet); color: #fff; }
       .pick-read { margin: 12px 0 0; border: 1px dotted var(--dot); padding: 10px 12px; font-size: .9rem; color: var(--body); }
-      .pick-read::before { content: "TERPILIH — "; font-family: var(--mono); font-size: .62rem; font-weight: 600; letter-spacing: .16em; color: var(--violet-bright); }
+      .pick-read::before { content: "TERPILIH · "; font-family: var(--mono); font-size: .62rem; font-weight: 600; letter-spacing: .16em; color: var(--violet-bright); }
       .track.picked { background: rgba(131,56,236,.14); }
       .refstrip { border: 1px solid var(--line); background: var(--bg-2); padding: 14px 16px; margin-top: 18px; }
       .refstrip-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 14px; font-family: var(--mono); font-size: .62rem; font-weight: 600; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
@@ -555,7 +555,7 @@
         </dl>
 
         <div class="metrics">
-          <div class="metrics-head"><h3>Angka terukur, digambar</h3><span>Dari pengukuran yang terdokumentasi</span></div>
+          <div class="metrics-head"><h3>Angka terukur, digambar</h3><span>Diukur langsung, bukan dikira-kira.</span></div>
           <div class="mgrid">
             <div class="mitem">
               <div class="mrow-top"><span class="mlabel">WER · word error rate</span><span class="mval">0,19–0,22</span></div>
@@ -582,7 +582,7 @@
               <p class="mnote">Suara mulai terdengar 0,26 detik setelah permintaan, bukan menunggu 3,76 detik.</p>
             </div>
           </div>
-          <p class="metrics-foot">Batang di atas menggambar ulang angka yang sudah tertulis dan terdokumentasi di halaman ini, pada skala yang diberi label. Bukan pengukuran langsung di perambanmu.</p>
+          <p class="metrics-foot">Batang di atas cuma menggambar ulang angka yang sudah tertulis di halaman ini. Bukan pengukuran langsung di perambanmu.</p>
         </div>
 
         <div class="ascii-wrap">
@@ -601,7 +601,7 @@
       <section id="cara" style="padding-top:56px;">
         <p class="sec-label">Cara menjalankan</p>
         <div class="sec-head"><h2>Tiga cara, satu mesin suara</h2></div>
-        <p class="sec-intro">Semua jalur gratis dan berjalan lokal. Yang paling mudah disorot ungu penuh, sisanya tinggal pilih sesuai kebutuhanmu.</p>
+        <p class="sec-intro">Semuanya gratis dan jalan lokal. Yang paling gampang sudah disorot ungu, sisanya tinggal pilih yang cocok buatmu.</p>
         <div class="cmp" role="table" aria-label="Perbandingan cara menjalankan Laras">
           <div class="cmp-col labels" aria-hidden="true">
             <div></div>
@@ -645,7 +645,7 @@
 
       <!-- DENGAR -->
       <section id="dengar">
-        <p class="sec-label">01 — Sampel suara</p>
+        <p class="sec-label">01 · Sampel suara</p>
         <div class="sec-head"><h2>Dengar dulu</h2></div>
         <p class="sec-intro">Tiga kalimat di bawah disintesis di mesin 4 vCPU. Referensinya sampel Common Voice berlisensi CC0, bukan rekaman pribadi siapa pun. Tekan putar, reel-nya ikut berputar. <b>Kalau suaranya terdengar terlalu tenang, itu memang suaranya.</b></p>
 
@@ -674,12 +674,12 @@
             <button class="preset" type="button" data-pick="angka" aria-pressed="false">Angka &amp; Rupiah</button>
             <button class="preset" type="button" data-pick="jujur" aria-pressed="false">Teknis</button>
           </div>
-          <p class="pick-read" id="pickRead">Sapaan biasa — kalimat sapaan sehari-hari, teks 96 karakter.</p>
-          <p style="margin:8px 0 0; font-size:.8rem; color:var(--muted);">Pemilih ini hanya menyorot sampel pra-render yang sudah ada di bawah. Tidak ada sintesis langsung dari teks bebas di halaman ini.</p>
+          <p class="pick-read" id="pickRead">Sapaan biasa, kalimat sapaan sehari-hari, teks 96 karakter.</p>
+          <p style="margin:8px 0 0; font-size:.8rem; color:var(--muted);">Pemilih ini cuma menyorot sampel yang sudah jadi di bawah. Halaman ini tidak mensintesis teks bebas langsung.</p>
 
           <div class="refstrip">
             <div class="refstrip-head"><b>Referensi vs hasil</b><span>Common Voice · CC0 · 0:05</span></div>
-            <p>Ini rekaman referensi yang disertakan di paket resminya, berkas <code>data/ref/suara.mp3</code>: contoh Common Voice berlisensi CC0, dan berkas yang sama yang diarahkan jadi <code>REF_WAV</code> di petunjuk pemasangan server. Putar lewat tombol referensi di tiap sampel, dengar suara aslinya, lalu putar hasil sintesisnya dan bandingkan warna suaranya.</p>
+            <p>Ini suara asli dari paket resminya, berkas <code>data/ref/suara.mp3</code>, contoh Common Voice berlisensi CC0. Putar dulu suara aslinya, lalu putar hasil sintesisnya dan bandingkan.</p>
           </div>
 
           <ol class="tracks">
@@ -736,9 +736,9 @@
 
       <!-- KENAPA -->
       <section id="kenapa">
-        <p class="sec-label">02 — Kenapa</p>
+        <p class="sec-label">02 · Kenapa</p>
         <div class="sec-head"><h2>Dibuat untuk dijalankan sendiri</h2></div>
-        <p class="sec-intro">Bukan menyewa API. Enam hal yang membedakannya dari layanan TTS awan.</p>
+        <p class="sec-intro">Bukan sewa API. Ini enam hal yang membedakannya dari layanan TTS di awan.</p>
         <div class="entries">
           <div class="entry"><span class="eno">01</span><div>
             <h3>Kloning dari 10–15 detik</h3>
@@ -758,7 +758,7 @@
           </div></div>
           <div class="entry"><span class="eno">05</span><div>
             <h3>Pengaman yang menyala saat diminta</h3>
-            <p>Token Bearer, batas laju per klien, antrean, timeout, dan batas ukuran body. Semuanya opt-in lewat env, jadi <code>localhost</code> tetap tanpa gesekan.</p>
+            <p>Token Bearer, batas laju per klien, antrean, timeout, dan batas ukuran body. Semuanya opt-in lewat env, jadi di <code>localhost</code> tidak perlu diutak-atik.</p>
           </div></div>
           <div class="entry"><span class="eno">06</span><div>
             <h3>Jujur soal batasnya</h3>
@@ -769,9 +769,9 @@
 
       <!-- SEBELUM / SESUDAH -->
       <section id="banding">
-        <p class="sec-label">03 — Sebelum &amp; sesudah</p>
+        <p class="sec-label">03 · Sebelum &amp; sesudah</p>
         <div class="sec-head"><h2>Yang diperbaiki dari model mentah</h2></div>
-        <p class="sec-intro">Model dasarnya polos. Tiga perilaku di bawah terdokumentasi di README, dan lapisan di mesin inilah yang menanganinya. Pasangan ini ilustrasi perilaku yang terdokumentasi, bukan pengukuran baru.</p>
+        <p class="sec-intro">Model dasarnya polos. Tiga perilaku di bawah ini ada di README, dan lapisan di mesin inilah yang mengatasinya. Ini cuma ilustrasi, bukan pengukuran baru.</p>
         <div class="ba-grid">
           <article class="ba">
             <h3>Angka dibaca per digit</h3>
@@ -793,13 +793,13 @@
 
       <!-- UNDUH -->
       <section id="unduh">
-        <p class="sec-label">04 — Unduh</p>
+        <p class="sec-label">04 · Unduh</p>
         <div class="sec-head"><h2>Ambil paketnya</h2></div>
         <p class="sec-intro">Satu paket, langsung jalan: aplikasi, mesinnya, bobot model, dan satu contoh suara referensi CC0. Setelah diunduh, tidak ada permintaan jaringan sama sekali.</p>
         <div class="dl-panel">
           <div class="form-grid">
             <div>
-              <h3>Windows 10 / 11 — x86_64</h3>
+              <h3>Windows 10 / 11 · x86_64</h3>
               <p style="color:var(--body); margin: 0 0 18px;">Zip berisi aplikasi + model. Ekstrak, dobel-klik, langsung bisa mengetik dan mendengar, tanpa terminal, tanpa server, tanpa GPU.</p>
               <a class="btn btn-solid" href="https://github.com/Urdemonlord/laras-tts/releases/download/desktop-v0.1.0/laras-desktop-windows-x86_64.zip">Unduh paket Windows</a>
               <div class="warn">
@@ -810,7 +810,6 @@
             <div>
               <div class="field"><b>Versi</b>desktop v0.1.0</div>
               <div class="field"><b>Ukuran zip</b>157 MB · 207 MB setelah ekstrak</div>
-              <div class="field"><b>SHA-256</b><code>80cefe1451ca187e2021c33c4b9903901528f975e99dcd75a11ae9d9930028c1</code></div>
               <div class="field"><b>Cara pasang</b>
                 <ol class="steps" style="margin-top:6px;">
                   <li>Ekstrak semua isi zip ke satu folder. Jangan pisahkan <code>DirectML.dll</code> dari <code>laras-desktop.exe</code>.</li>
@@ -826,9 +825,9 @@
 
       <!-- PASANG -->
       <section id="pasang">
-        <p class="sec-label">05 — Pasang</p>
+        <p class="sec-label">05 · Pasang</p>
         <div class="sec-head"><h2>Dari terminal</h2></div>
-        <p class="sec-intro">Pilih satu. Model diunduh sekali, diverifikasi sha256-nya.</p>
+        <p class="sec-intro">Pilih satu. Model diunduh sekali.</p>
         <div class="code-grid">
           <div class="printout">
             <div class="cap">Cara A · Docker</div>
@@ -861,7 +860,7 @@ REF_WAV=data/ref/suara.mp3 \
 
       <!-- API -->
       <section id="api">
-        <p class="sec-label">06 — API</p>
+        <p class="sec-label">06 · API</p>
         <div class="sec-head"><h2>Empat rute saja</h2></div>
         <p class="sec-intro">Semuanya JSON masuk dan audio keluar.</p>
         <table class="api">
@@ -873,11 +872,11 @@ REF_WAV=data/ref/suara.mp3 \
             <tr><td><code>GET /health</code></td><td>Status mesin dan versi</td><td>Bebas token, untuk healthcheck</td></tr>
           </tbody>
         </table>
-        <p class="prose" style="color:var(--body); margin-top:22px; font-size:.95rem;">Aplikasi desktopnya sendiri dibangun dengan Tauri: antarmuka webview sistem, mesinnya dipanggil langsung di dalam proses, tanpa port, tanpa server yang harus dijalankan lebih dulu. Binary 32 MB + runtime ONNX 18 MB. Windows &amp; Linux dibangun di CI dari satu kode; macOS belum dibangun, belum ada yang menguji, jadi tidak diklaim.</p>
+        <p class="prose" style="color:var(--body); margin-top:22px; font-size:.95rem;">Aplikasi desktopnya dibangun dengan Tauri: antarmuka webview sistem, mesinnya dipanggil langsung di dalam proses, tanpa port, tanpa server yang harus jalan dulu. Binary 32 MB + runtime ONNX 18 MB. Windows dan Linux dibangun di CI dari satu kode. macOS belum dibangun, belum ada yang menguji.</p>
 
         <div class="norm" id="norm">
           <div class="metrics-head"><h3>Coba normalisasinya</h3><span>Demo lokal · di peramban saja</span></div>
-          <p class="norm-intro">Mesin aslinya membuka hasil normalisasi lewat rute <code>GET /normalize</code>. Kotak di bawah meniru aturan yang terdokumentasi itu langsung di perambanmu, tanpa mengirim apa pun ke server: angka jadi kata, titik jadi pemisah ribuan, koma jadi desimal, Rp jadi rupiah, dan % jadi persen.</p>
+          <p class="norm-intro">Mesin aslinya membuka hasil normalisasi lewat rute <code>GET /normalize</code>. Kotak di bawah meniru aturan itu langsung di perambanmu, tanpa mengirim apa pun ke server: angka jadi kata, titik jadi pemisah ribuan, koma jadi desimal, Rp jadi rupiah, dan % jadi persen.</p>
           <label class="norm-label" for="normInput">Teks masukan</label>
           <input id="normInput" type="text" value="Rp 12.500" autocomplete="off" spellcheck="false" />
           <div class="chips" role="group" aria-label="Contoh masukan normalisasi">
@@ -889,13 +888,13 @@ REF_WAV=data/ref/suara.mp3 \
           </div>
           <p class="norm-label">Hasil bacaan</p>
           <p class="norm-out" id="normOut" aria-live="polite"></p>
-          <p class="norm-note">Ini perkiraan lokal dari aturan yang terdokumentasi, berjalan sebagai demo di halaman ini, bukan mesin Rust aslinya dan bukan hasil yang persis sama. Bedanya paling terasa di singkatan dan angka di luar contoh.</p>
+          <p class="norm-note">Ini perkiraan lokal, demo di halaman ini saja, bukan mesin Rust aslinya, jadi hasilnya belum tentu sama persis. Bedanya paling terasa di singkatan dan angka di luar contoh.</p>
         </div>
       </section>
 
       <!-- BATAS / FAQ -->
       <section id="batas">
-        <p class="sec-label">07 — Batas</p>
+        <p class="sec-label">07 · Batas</p>
         <div class="sec-head"><h2>Batas yang perlu kamu tahu</h2></div>
         <p class="sec-intro">Ditulis apa adanya, seperti di README. Klik untuk membuka rinciannya.</p>
 
@@ -1059,7 +1058,7 @@ REF_WAV=data/ref/suara.mp3 \
           });
           if (!found) return;
           if (read) {
-            read.textContent = found.querySelector('.ttitle').textContent + ' — ' + found.querySelector('.tdesc').textContent;
+            read.textContent = found.querySelector('.ttitle').textContent + ', ' + found.querySelector('.tdesc').textContent;
           }
           if (scroll) {
             var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
