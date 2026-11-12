@@ -835,9 +835,11 @@
 git clone https://github.com/Urdemonlord/laras-tts \
   &amp;&amp; cd laras-tts
 ./scripts/unduh-model.sh
+# samakan nama referensi dengan yang dipakai landing &amp; desktop
+cp data/ref/common_voice_id_19961910.mp3 data/ref/suara.mp3
 
 # jalankan
-docker run --rm -p 8080:8080 \
+docker run --rm -p 127.0.0.1:8080:8080 \
   -v "$PWD/data:/data" \
   ghcr.io/urdemonlord/laras-tts:0.2.1
 
@@ -850,6 +852,9 @@ curl -s -X POST localhost:8080/tts \
             <div class="cap">Cara B · Dari sumber, tanpa Docker</div>
             <pre># butuh Rust ≥ 1.92 dan cmake
 cargo build --release --features onnx
+
+# samakan nama referensi dengan yang dipakai landing &amp; desktop
+cp data/ref/common_voice_id_19961910.mp3 data/ref/suara.mp3
 
 MODELS_DIR=data/models \
 REF_WAV=data/ref/suara.mp3 \
