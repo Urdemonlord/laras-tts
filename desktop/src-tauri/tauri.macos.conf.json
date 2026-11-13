@@ -1,0 +1,5 @@
+{
+  "bundle": {
+    "resources": ["data/models", "data/ref"]
+  }
+}

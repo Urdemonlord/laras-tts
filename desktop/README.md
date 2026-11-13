@@ -73,7 +73,7 @@ Aplikasi mencari, berurutan:
 3. `data/models` dan `data/ref/suara.mp3` di samping binary (atau di samping bundle `.app` di macOS),
 4. `data/models` dan `data/ref/suara.mp3` relatif ke direktori kerja.
 
-Referensi suara dicari sebagai `suara.wav` dulu, baru `suara.mp3`, di tiap lokasi di atas; WAV dibaca langsung tanpa ffmpeg, jadi paket desktop menyertakan keduanya.
+Referensi suara dicari sebagai `suara.wav` dulu, baru `suara.mp3`, di tiap lokasi di atas; WAV dibaca langsung tanpa ffmpeg, jadi paket desktop menyertakan keduanya. Di macOS, paket rilis membundel model dan referensi di dalam `.app` (Resources), jadi tidak butuh folder `data/` di samping aplikasi.
 
 Kalau tidak ketemu, panel **Pengaturan** terbuka dan kamu bisa menunjuk folder
 sendiri. Tidak ada unduhan tersembunyi di dalam aplikasi — model diunduh lewat

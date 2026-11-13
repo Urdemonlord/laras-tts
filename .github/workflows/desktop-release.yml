@@ -8,7 +8,7 @@ name: Rilis Desktop
 #
 # Yang dihasilkan per rilis:
 #   Linux   .deb + AppImage (tauri-cli, dibangun di ubuntu-22.04 untuk glibc 2.35+) + tarball (binary + model + referensi)
-#   macOS   tarball arm64 + x86_64 (folder Laras berisi .app + model + referensi)
+#   macOS   tarball arm64 + x86_64 (folder Laras berisi .app; model + referensi dibundel di dalam .app)
 #   Windows zip (exe + DLL + model + referensi, sama seperti desktop-v0.1.0)
 #
 # Urutan rilis: merge PR ini -> push tag desktop-v0.1.1 -> job ini jalan ->
@@ -144,42 +144,39 @@ jobs:
       - name: Pasang tauri-cli
         run: cargo install tauri-cli --version "^2" --locked
 
+      - name: Unduh model + referensi (untuk dibundel)
+        run: |
+          set -euo pipefail
+          bash scripts/unduh-model.sh --dir desktop/src-tauri/data/models --ref-dir desktop/src-tauri/data/ref
+          mv desktop/src-tauri/data/ref/common_voice_id_19961910.mp3 desktop/src-tauri/data/ref/suara.mp3
+          ffmpeg -y -v error -i desktop/src-tauri/data/ref/suara.mp3 -ar 24000 -ac 1 -c:a pcm_s16le desktop/src-tauri/data/ref/suara.wav
+
       - name: Bangun aplikasi (.app)
         working-directory: desktop/src-tauri
         run: cargo tauri build --target ${{ matrix.target }} --bundles app
 
-      - name: Rakit tarball (.app + model + referensi)
+      - name: Rakit tarball (.app + BACA-DULU)
         run: |
           set -euo pipefail
           APP="desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/Laras.app"
           test -d "$APP"
           rm -rf paket
-          mkdir -p paket/Laras/data/models paket/Laras/data/ref
+          mkdir -p paket/Laras
           ditto "$APP" paket/Laras/Laras.app
-          bash scripts/unduh-model.sh --dir paket/Laras/data/models --ref-dir paket/Laras/data/ref
-          mv paket/Laras/data/ref/common_voice_id_19961910.mp3 paket/Laras/data/ref/suara.mp3
-          ffmpeg -y -v error -i paket/Laras/data/ref/suara.mp3 -ar 24000 -ac 1 -c:a pcm_s16le paket/Laras/data/ref/suara.wav
           cat > paket/Laras/BACA-DULU.txt <<'EOF'
           Laras — aplikasi desktop TTS Bahasa Indonesia
           =============================================
 
           Cara pakai:
             1. Ekstrak tarball ini, hasilnya satu folder Laras.
-            2. Pindahkan SELURUH folder Laras ke Applications (jangan
-               cuma Laras.app-nya: data model ikut di dalam folder itu).
-            3. Buka Laras.app di dalam folder Laras.
+            2. Buka Laras.app di dalam folder Laras. Model dan suara
+               referensi sudah ada di dalam aplikasi.
 
           Aplikasi ini tidak ditandatangani (tanpa sertifikat Apple),
           jadi macOS memblokir dobel-klik pertama. Di macOS Sequoia
           ke atas, buka aplikasinya sekali (akan ditolak), lalu ke
           System Settings, Privacy & Security, Open Anyway. Di macOS
           lama, klik kanan Laras.app lalu pilih Open.
-
-          Isi folder Laras harus seperti ini:
-            Laras.app
-            data/models/   (9 berkas model ONNX)
-            data/ref/suara.wav
-            data/ref/suara.mp3
 
           Catatan:
             - Suara referensi bawaan adalah contoh Common Voice (CC0).

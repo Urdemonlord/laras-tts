@@ -49,6 +49,21 @@ impl Inti {
     }
 }
 
+/// Folder Resources di dalam bundle `.app` (macOS): model dan referensi
+/// yang dibundel lewat `bundle.resources` tinggal di sini. Berfungsi juga
+/// saat Gatekeeper menjalankan aplikasi dari lokasi sementara (App
+/// Translocation), karena Resources ikut tersalin bersama .app.
+fn resource_dir_dari_exe() -> Option<PathBuf> {
+    let mut d = std::env::current_exe().ok()?;
+    while let Some(p) = d.parent() {
+        if p.file_name().map(|n| n == "Contents").unwrap_or(false) {
+            return Some(p.join("Resources"));
+        }
+        d = p.to_path_buf();
+    }
+    None
+}
+
 /// Urutan pencarian model: env, lalu folder data pengguna, lalu folder
 /// `data/` di samping binary/bundle, lalu folder repo (memudahkan
 /// `cargo run` saat mengembangkan).
@@ -79,6 +94,9 @@ fn cari_models() -> PathBuf {
     if let Some(d) = dirs_data() {
         calon.push(d.join("models"));
     }
+    if let Some(r) = resource_dir_dari_exe() {
+        calon.push(r.join("data/models"));
+    }
     for d in data_di_samping_exe() {
         calon.push(d.join("models"));
     }
@@ -103,6 +121,9 @@ fn cari_referensi() -> PathBuf {
     let mut basis: Vec<PathBuf> = Vec::new();
     if let Some(d) = dirs_data() {
         basis.push(d.join("ref"));
+    }
+    if let Some(r) = resource_dir_dari_exe() {
+        basis.push(r.join("data/ref"));
     }
     for d in data_di_samping_exe() {
         basis.push(d.join("ref"));
