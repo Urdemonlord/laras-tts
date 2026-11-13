@@ -7,7 +7,7 @@ name: Rilis Desktop
 # rilis tidak disentuh.
 #
 # Yang dihasilkan per rilis:
-#   Linux   .deb + AppImage (tauri-cli, dibangun di ubuntu-22.04 untuk glibc 2.35+) + tarball (binary + model + referensi)
+#   Linux   .deb + AppImage (tauri-cli, dibangun di ubuntu-24.04; butuh glibc 2.39+) + tarball (binary + model + referensi)
 #   macOS   tarball arm64 + x86_64 (folder Laras berisi .app; model + referensi dibundel di dalam .app)
 #   Windows zip (exe + DLL + model + referensi, sama seperti desktop-v0.1.0)
 #
@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -144,6 +144,11 @@ jobs:
       - name: Pasang tauri-cli
         run: cargo install tauri-cli --version "^2" --locked
 
+      - name: Pasang ffmpeg
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: brew install ffmpeg
+
       - name: Unduh model + referensi (untuk dibundel)
         run: |
           set -euo pipefail
@@ -242,6 +247,9 @@ jobs:
           Get-ChildItem .\desktop\src-tauri\target\release -Filter *.dll -File -ErrorAction SilentlyContinue |
             Copy-Item -Destination out\
           Get-ChildItem out | Select-Object Name, Length | Format-Table
+
+      - name: Pasang ffmpeg
+        run: choco install ffmpeg -y
 
       - name: Siapkan model + referensi
         shell: bash

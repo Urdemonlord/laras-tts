@@ -110,6 +110,9 @@ jobs:
             Copy-Item -Destination out\
           Get-ChildItem out | Select-Object Name, Length | Format-Table
 
+      - name: Pasang ffmpeg
+        run: choco install ffmpeg -y
+
       - name: Siapkan model + referensi
         # Model diambil dari Hugging Face lewat skrip repo sendiri, jadi
         # paketnya lengkap: cukup unduh satu artefak, ekstrak, jalankan.
