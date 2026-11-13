@@ -1,0 +1,295 @@
+name: Rilis Desktop
+
+# Membangun paket desktop dan mengunggahnya ke rilis GitHub.
+#
+# Dipicu oleh tag desktop-v* atau manual (workflow_dispatch). Mode manual
+# hanya latihan: semua paket dibangun dan disimpan sebagai artefak CI,
+# rilis tidak disentuh.
+#
+# Yang dihasilkan per rilis:
+#   Linux   .deb + AppImage (tauri-cli) + tarball (binary + model + referensi)
+#   macOS   tarball arm64 + x86_64 (.app + model + referensi)
+#   Windows zip (exe + DLL + model + referensi, sama seperti desktop-v0.1.0)
+#
+# Urutan rilis: merge PR ini -> push tag desktop-v0.1.1 -> job ini jalan ->
+# verifikasi aset di halaman rilis -> deploy landing (link sudah menunjuk
+# ke aset desktop-v0.1.1).
+#
+# Catatan: paket macOS tidak ditandatangani (tanpa sertifikat Apple),
+# jadi Gatekeeper memblokir dobel-klik pertama; klik kanan -> Open.
+# Belum ada yang menguji di Mac asli. Build desktop harian tetap
+# di desktop.yml; berkas ini hanya untuk rilis.
+
+on:
+  push:
+    tags: ["desktop-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "desktop/src-tauri -> target"
+
+      - name: Dependensi WebKitGTK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            librsvg2-dev libsoup-3.0-dev
+
+      - name: Pasang tauri-cli
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Bangun paket (.deb + AppImage)
+        working-directory: desktop/src-tauri
+        run: cargo tauri build
+
+      - name: Rakit tarball (binary + model + referensi)
+        run: |
+          set -euo pipefail
+          rm -rf paket
+          mkdir -p paket/data/models paket/data/ref
+          cp desktop/src-tauri/target/release/laras-desktop paket/
+          bash scripts/unduh-model.sh --dir paket/data/models --ref-dir paket/data/ref
+          mv paket/data/ref/common_voice_id_19961910.mp3 paket/data/ref/suara.mp3
+          cat > paket/BACA-DULU.txt <<'EOF'
+          Laras — aplikasi desktop TTS Bahasa Indonesia
+          =============================================
+
+          Cara pakai:
+            1. Ekstrak SEMUA isi tarball ini ke satu folder (jangan pisahkan).
+            2. Jalankan ./laras-desktop
+
+          Isi folder harus seperti ini:
+            laras-desktop
+            data/models/   (9 berkas model ONNX)
+            data/ref/suara.mp3
+
+          Catatan:
+            - Butuh libwebkit2gtk-4.1 di sistem (kebanyakan desktop Linux
+              modern sudah punya). Kalau aplikasi tidak mau jalan, pasang:
+              sudo apt install libwebkit2gtk-4.1-0
+            - Suara referensi bawaan adalah contoh Common Voice (CC0).
+              Ganti lewat menu di aplikasi kalau mau suara lain.
+            - Semua proses berjalan di CPU, tanpa jaringan.
+          EOF
+          tar czf laras-desktop-linux-x86_64.tar.gz -C paket laras-desktop data BACA-DULU.txt
+          ls -lh laras-desktop-linux-x86_64.tar.gz
+
+      - name: Samakan nama paket
+        run: |
+          set -euo pipefail
+          cp desktop/src-tauri/target/release/bundle/deb/*.deb laras-desktop-linux-x86_64.deb
+          cp desktop/src-tauri/target/release/bundle/appimage/*.AppImage laras-desktop-linux-x86_64.AppImage
+          ls -lh laras-desktop-linux-x86_64.deb laras-desktop-linux-x86_64.AppImage
+
+      - name: Unggah ke rilis
+        if: github.ref_type == 'tag'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          gh release create "$TAG" --title "Laras Desktop ${TAG#desktop-v}" \
+            --notes "Paket desktop Laras: Linux (.deb, AppImage, tarball), macOS (tarball arm64 + x86_64), Windows (zip). Semua sudah termasuk model + satu contoh suara referensi CC0." \
+            2>/dev/null || true
+          gh release upload "$TAG" laras-desktop-linux-x86_64.deb laras-desktop-linux-x86_64.AppImage laras-desktop-linux-x86_64.tar.gz --clobber
+
+      - name: Simpan artefak (latihan)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: laras-desktop-linux-paket
+          path: |
+            laras-desktop-linux-x86_64.deb
+            laras-desktop-linux-x86_64.AppImage
+            laras-desktop-linux-x86_64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  macos:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            nama: arm64
+          - target: x86_64-apple-darwin
+            nama: x86_64
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "desktop/src-tauri -> target"
+
+      - name: Pasang tauri-cli
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Bangun aplikasi (.app)
+        working-directory: desktop/src-tauri
+        run: cargo tauri build --target ${{ matrix.target }}
+
+      - name: Rakit tarball (.app + model + referensi)
+        run: |
+          set -euo pipefail
+          APP="desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/Laras.app"
+          test -d "$APP"
+          rm -rf paket
+          mkdir -p paket/data/models paket/data/ref
+          ditto "$APP" paket/Laras.app
+          bash scripts/unduh-model.sh --dir paket/data/models --ref-dir paket/data/ref
+          mv paket/data/ref/common_voice_id_19961910.mp3 paket/data/ref/suara.mp3
+          cat > paket/BACA-DULU.txt <<'EOF'
+          Laras — aplikasi desktop TTS Bahasa Indonesia
+          =============================================
+
+          Cara pakai:
+            1. Ekstrak SEMUA isi tarball ini ke satu folder (jangan pisahkan).
+            2. Buka Laras.app (dobel-klik).
+
+          Aplikasi ini tidak ditandatangani (tanpa sertifikat Apple),
+          jadi macOS memblokir dobel-klik pertama. Klik kanan Laras.app
+          lalu pilih Open, kemudian Open lagi di dialog yang muncul.
+          Setelah itu dobel-klik biasa sudah bisa.
+
+          Isi folder harus seperti ini:
+            Laras.app
+            data/models/   (9 berkas model ONNX)
+            data/ref/suara.mp3
+
+          Catatan:
+            - Suara referensi bawaan adalah contoh Common Voice (CC0).
+              Ganti lewat menu di aplikasi kalau mau suara lain.
+            - Semua proses berjalan di CPU, tanpa jaringan.
+          EOF
+          tar czf "laras-desktop-macos-${{ matrix.nama }}.tar.gz" -C paket Laras.app data BACA-DULU.txt
+          ls -lh "laras-desktop-macos-${{ matrix.nama }}.tar.gz"
+
+      - name: Unggah ke rilis
+        if: github.ref_type == 'tag'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          gh release create "$TAG" --title "Laras Desktop ${TAG#desktop-v}" \
+            --notes "Paket desktop Laras: Linux (.deb, AppImage, tarball), macOS (tarball arm64 + x86_64), Windows (zip). Semua sudah termasuk model + satu contoh suara referensi CC0." \
+            2>/dev/null || true
+          gh release upload "$TAG" "laras-desktop-macos-${{ matrix.nama }}.tar.gz" --clobber
+
+      - name: Simpan artefak (latihan)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: laras-desktop-macos-${{ matrix.nama }}-paket
+          path: laras-desktop-macos-${{ matrix.nama }}.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------------------------------------------------------------- windows
+  # Langkahnya sama dengan job windows di desktop.yml, ditambah zip dan
+  # unggah ke rilis. Tetap dibangun di runner, tidak pernah di VPS.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.92.0"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "desktop/src-tauri -> target"
+
+      - name: Bangun (release)
+        run: cargo build --release --manifest-path desktop/src-tauri/Cargo.toml
+
+      - name: Uji mode kepala tanpa model
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath ".\desktop\src-tauri\target\release\laras-desktop.exe" `
+            -ArgumentList '--sintesis ""' -Wait -PassThru -NoNewWindow
+          Write-Host "kode keluar: $($p.ExitCode)"
+          if ($p.ExitCode -ne 2) { exit 1 }
+
+      - name: Kumpulkan berkas
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item .\desktop\src-tauri\target\release\laras-desktop.exe out\
+          Get-ChildItem .\desktop\src-tauri\target\release -Filter *.dll -File -ErrorAction SilentlyContinue |
+            Copy-Item -Destination out\
+          Get-ChildItem out | Select-Object Name, Length | Format-Table
+
+      - name: Siapkan model + referensi
+        shell: bash
+        run: |
+          bash scripts/unduh-model.sh --dir out/data/models --ref-dir out/data/ref
+          mv out/data/ref/common_voice_id_19961910.mp3 out/data/ref/suara.mp3
+
+      - name: Tulis petunjuk pakai
+        shell: bash
+        run: |
+          cat > out/BACA-DULU.txt <<'EOF'
+          Laras — aplikasi desktop TTS Bahasa Indonesia
+          =============================================
+
+          Cara pakai:
+            1. Ekstrak SEMUA isi zip ini ke satu folder (jangan pisahkan).
+            2. Dobel-klik laras-desktop.exe
+
+          Isi folder harus seperti ini:
+            laras-desktop.exe
+            DirectML.dll
+            data/models/   (9 berkas model ONNX)
+            data/ref/suara.mp3
+
+          Catatan:
+            - DirectML.dll wajib ada di folder yang sama dengan .exe.
+            - Suara referensi bawaan adalah contoh Common Voice (CC0).
+              Ganti lewat menu di aplikasi kalau mau suara lain.
+            - Semua proses berjalan di CPU, tanpa jaringan.
+          EOF
+
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path out\* -DestinationPath laras-desktop-windows-x86_64.zip
+
+      - name: Unggah ke rilis
+        if: github.ref_type == 'tag'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          gh release create "$TAG" --title "Laras Desktop ${TAG#desktop-v}" \
+            --notes "Paket desktop Laras: Linux (.deb, AppImage, tarball), macOS (tarball arm64 + x86_64), Windows (zip). Semua sudah termasuk model + satu contoh suara referensi CC0." \
+            2>/dev/null || true
+          gh release upload "$TAG" laras-desktop-windows-x86_64.zip --clobber
+
+      - name: Simpan artefak (latihan)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: laras-desktop-windows-paket
+          path: laras-desktop-windows-x86_64.zip
+          if-no-files-found: error
+          retention-days: 14

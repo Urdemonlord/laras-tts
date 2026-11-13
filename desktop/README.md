@@ -62,13 +62,16 @@ cargo install tauri-cli --version "^2" --locked
 cd desktop/src-tauri && cargo tauri build
 ```
 
+Rilis resmi dibuat otomatis oleh `.github/workflows/desktop-release.yml` saat tag `desktop-v*` di-push: Linux (.deb, AppImage, tarball), macOS (tarball arm64 + x86_64), Windows (zip).
+
 ## Model dan referensi suara
 
 Aplikasi mencari, berurutan:
 
 1. `MODELS_DIR` / `REF_WAV` dari lingkungan,
 2. `~/.local/share/laras/models` dan `~/.local/share/laras/ref/suara.mp3`,
-3. `data/models` dan `data/ref/suara.mp3` relatif ke direktori kerja.
+3. `data/models` dan `data/ref/suara.mp3` di samping binary (atau di samping bundle `.app` di macOS),
+4. `data/models` dan `data/ref/suara.mp3` relatif ke direktori kerja.
 
 Kalau tidak ketemu, panel **Pengaturan** terbuka dan kamu bisa menunjuk folder
 sendiri. Tidak ada unduhan tersembunyi di dalam aplikasi — model diunduh lewat

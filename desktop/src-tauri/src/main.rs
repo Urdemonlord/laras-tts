@@ -49,8 +49,27 @@ impl Inti {
     }
 }
 
-/// Urutan pencarian model: env, lalu folder data pengguna, lalu folder repo
-/// (memudahkan `cargo run` saat mengembangkan).
+/// Urutan pencarian model: env, lalu folder data pengguna, lalu folder
+/// `data/` di samping binary/bundle, lalu folder repo (memudahkan
+/// `cargo run` saat mengembangkan).
+///
+/// Kandidat dari lokasi binary: paket (zip/tarball/.deb/.app) menaruh
+/// `data/` di samping binary atau di samping bundle `.app`. Naik sampai
+/// tiga tingkat supaya `.app/Contents/MacOS/laras-desktop` menemukan
+/// `data/` di samping `Laras.app`.
+fn calon_dari_exe(rel: &str) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut d = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(PathBuf::from));
+    for _ in 0..4 {
+        let Some(p) = d else { break };
+        out.push(p.join("data").join(rel));
+        d = p.parent().map(PathBuf::from);
+    }
+    out
+}
+
 fn cari_models() -> PathBuf {
     let mut calon: Vec<PathBuf> = Vec::new();
     if let Ok(v) = std::env::var("MODELS_DIR") {
@@ -59,6 +78,7 @@ fn cari_models() -> PathBuf {
     if let Some(d) = dirs_data() {
         calon.push(d.join("models"));
     }
+    calon.extend(calon_dari_exe("models"));
     if let Ok(d) = std::env::current_dir() {
         calon.push(d.join("data/models"));
         calon.push(d.join("../data/models"));
@@ -78,6 +98,7 @@ fn cari_referensi() -> PathBuf {
     if let Some(d) = dirs_data() {
         calon.push(d.join("ref/suara.mp3"));
     }
+    calon.extend(calon_dari_exe("ref/suara.mp3"));
     if let Ok(d) = std::env::current_dir() {
         calon.push(d.join("data/ref/suara.mp3"));
         calon.push(d.join("../data/ref/suara.mp3"));
