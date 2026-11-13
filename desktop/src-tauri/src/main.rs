@@ -49,14 +49,55 @@ impl Inti {
     }
 }
 
-/// Urutan pencarian model: env, lalu folder data pengguna, lalu folder repo
-/// (memudahkan `cargo run` saat mengembangkan).
+/// Folder Resources di dalam bundle `.app` (macOS): model dan referensi
+/// yang dibundel lewat `bundle.resources` tinggal di sini. Berfungsi juga
+/// saat Gatekeeper menjalankan aplikasi dari lokasi sementara (App
+/// Translocation), karena Resources ikut tersalin bersama .app.
+fn resource_dir_dari_exe() -> Option<PathBuf> {
+    let mut d = std::env::current_exe().ok()?;
+    while let Some(p) = d.parent() {
+        if p.file_name().map(|n| n == "Contents").unwrap_or(false) {
+            return Some(p.join("Resources"));
+        }
+        d = p.to_path_buf();
+    }
+    None
+}
+
+/// Urutan pencarian model: env, lalu folder data pengguna, lalu folder
+/// `data/` di samping binary/bundle, lalu folder repo (memudahkan
+/// `cargo run` saat mengembangkan).
+///
+/// Folder `data/` di samping binary/bundle: hanya paket arsip mandiri
+/// (zip/tarball) yang menaruh `data/` di sana. `.deb` dan AppImage tidak
+/// membawa `data/`, jadi kandidat ini tidak kena di sana. Naik sampai
+/// tiga tingkat supaya `.app/Contents/MacOS/laras-desktop` menemukan
+/// `data/` di samping `Laras.app`.
+fn data_di_samping_exe() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut d = std::env::current_exe()
+        .ok()
+        .and_then(|e| e.parent().map(PathBuf::from));
+    for _ in 0..4 {
+        let Some(p) = d else { break };
+        out.push(p.join("data"));
+        d = p.parent().map(PathBuf::from);
+    }
+    out
+}
+
 fn cari_models() -> PathBuf {
     let mut calon: Vec<PathBuf> = Vec::new();
     if let Ok(v) = std::env::var("MODELS_DIR") {
         calon.push(PathBuf::from(v));
     }
     if let Some(d) = dirs_data() {
+        calon.push(d.join("models"));
+    }
+    if let Some(r) = resource_dir_dari_exe() {
+        calon.push(r.join("data/models"));
+    }
+    for d in data_di_samping_exe() {
         calon.push(d.join("models"));
     }
     if let Ok(d) = std::env::current_dir() {
@@ -70,17 +111,30 @@ fn cari_models() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("data/models"))
 }
 
+/// Referensi suara: WAV lebih dulu daripada MP3 di tiap lokasi, karena
+/// WAV dibaca langsung tanpa ffmpeg (lihat `laras::onnx::wav`).
 fn cari_referensi() -> PathBuf {
     let mut calon: Vec<PathBuf> = Vec::new();
     if let Ok(v) = std::env::var("REF_WAV") {
         calon.push(PathBuf::from(v));
     }
+    let mut basis: Vec<PathBuf> = Vec::new();
     if let Some(d) = dirs_data() {
-        calon.push(d.join("ref/suara.mp3"));
+        basis.push(d.join("ref"));
+    }
+    if let Some(r) = resource_dir_dari_exe() {
+        basis.push(r.join("data/ref"));
+    }
+    for d in data_di_samping_exe() {
+        basis.push(d.join("ref"));
     }
     if let Ok(d) = std::env::current_dir() {
-        calon.push(d.join("data/ref/suara.mp3"));
-        calon.push(d.join("../data/ref/suara.mp3"));
+        basis.push(d.join("data/ref"));
+        basis.push(d.join("../data/ref"));
+    }
+    for b in basis {
+        calon.push(b.join("suara.wav"));
+        calon.push(b.join("suara.mp3"));
     }
     calon
         .iter()

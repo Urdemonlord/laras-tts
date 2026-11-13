@@ -801,14 +801,14 @@
             <div>
               <h3>Windows 10 / 11 · x86_64</h3>
               <p style="color:var(--body); margin: 0 0 18px;">Zip berisi aplikasi + model. Ekstrak, dobel-klik, langsung bisa mengetik dan mendengar, tanpa terminal, tanpa server, tanpa GPU.</p>
-              <a class="btn btn-solid" href="https://github.com/Urdemonlord/laras-tts/releases/download/desktop-v0.1.0/laras-desktop-windows-x86_64.zip">Unduh paket Windows</a>
+              <a class="btn btn-solid" href="https://github.com/Urdemonlord/laras-tts/releases/download/desktop-v0.1.1/laras-desktop-windows-x86_64.zip">Unduh paket Windows</a>
               <div class="warn">
                 <b>Peringatan SmartScreen</b>
                 Exe belum ditandatangani (sertifikat code-signing berbayar). Windows akan menampilkan “Windows protected your PC”, pilih <i>More info</i> → <i>Run anyway</i>.
               </div>
             </div>
             <div>
-              <div class="field"><b>Versi</b>desktop v0.1.0</div>
+              <div class="field"><b>Versi</b>desktop v0.1.1</div>
               <div class="field"><b>Ukuran zip</b>157 MB · 207 MB setelah ekstrak</div>
               <div class="field"><b>Cara pasang</b>
                 <ol class="steps" style="margin-top:6px;">
@@ -818,6 +818,28 @@
                 </ol>
               </div>
               <div class="field"><b>Linux &amp; server</b>Lewat Docker, satu perintah, tanpa build di mesin sendiri. Lihat bagian Pasang di bawah.</div>
+            </div>
+          </div>
+        </div>
+        <div class="dl-panel" style="margin-top:18px;">
+          <div class="form-grid">
+            <div>
+              <h3>Linux &middot; x86_64</h3>
+              <p style="color:var(--body); margin: 0 0 18px;">Tarball berisi aplikasi + model, sama seperti paket Windows. Ekstrak, jalankan ./laras-desktop, langsung bisa mengetik dan mendengar.</p>
+              <a class="btn btn-solid" href="https://github.com/Urdemonlord/laras-tts/releases/download/desktop-v0.1.1/laras-desktop-linux-x86_64.tar.gz">Unduh tarball Linux</a>
+              <div class="field" style="margin-top:14px;"><b>.deb dan AppImage</b>Untuk Debian/Ubuntu ada .deb, untuk distro lain ada AppImage, di <a href="https://github.com/Urdemonlord/laras-tts/releases/tag/desktop-v0.1.1">halaman rilis desktop-v0.1.1</a>. Keduanya hanya berisi aplikasi; model diunduh sekali secara terpisah, atau pakai tarball yang sudah termasuk model. Butuh glibc 2.35+ (Ubuntu 22.04+, Debian 12+) dan libwebkit2gtk-4.1; .deb memasang webkit sendiri, tarball dan AppImage tidak.</div>
+            </div>
+            <div>
+              <h3>macOS &middot; Apple Silicon dan Intel</h3>
+              <p style="color:var(--body); margin: 0 0 18px;">Tarball berisi satu folder Laras dengan aplikasi di dalamnya; model dan suara referensi sudah terbungkus di dalam aplikasi. Ekstrak, buka Laras.app, langsung bisa mengetik dan mendengar.</p>
+              <div style="display:flex; flex-direction:column; gap:10px; align-items:flex-start;">
+                <a class="btn btn-solid" href="https://github.com/Urdemonlord/laras-tts/releases/download/desktop-v0.1.1/laras-desktop-macos-arm64.tar.gz">Unduh macOS Apple Silicon</a>
+                <a class="btn btn-solid" href="https://github.com/Urdemonlord/laras-tts/releases/download/desktop-v0.1.1/laras-desktop-macos-x86_64.tar.gz">Unduh macOS Intel</a>
+              </div>
+              <div class="warn">
+                <b>Gatekeeper</b>
+                Aplikasi belum ditandatangani (tanpa sertifikat Apple). Di macOS Sequoia ke atas, buka aplikasinya sekali, lalu ke System Settings, Privacy & Security, Open Anyway. Di macOS lama, klik kanan Laras.app lalu pilih Open. Belum diuji di Mac asli.
+              </div>
             </div>
           </div>
         </div>
@@ -877,7 +899,7 @@ REF_WAV=data/ref/suara.mp3 \
             <tr><td><code>GET /health</code></td><td>Status mesin dan versi</td><td>Bebas token, untuk healthcheck</td></tr>
           </tbody>
         </table>
-        <p class="prose" style="color:var(--body); margin-top:22px; font-size:.95rem;">Aplikasi desktopnya dibangun dengan Tauri: antarmuka webview sistem, mesinnya dipanggil langsung di dalam proses, tanpa port, tanpa server yang harus jalan dulu. Binary 32 MB + runtime ONNX 18 MB. Windows dan Linux dibangun di CI dari satu kode. macOS belum dibangun, belum ada yang menguji.</p>
+        <p class="prose" style="color:var(--body); margin-top:22px; font-size:.95rem;">Aplikasi desktopnya dibangun dengan Tauri: antarmuka webview sistem, mesinnya dipanggil langsung di dalam proses, tanpa port, tanpa server yang harus jalan dulu. Binary 32 MB + runtime ONNX 18 MB. Windows, Linux, dan macOS dibangun di CI dari satu kode. Paket macOS belum diuji di Mac asli.</p>
 
         <div class="norm" id="norm">
           <div class="metrics-head"><h3>Coba normalisasinya</h3><span>Demo lokal · di peramban saja</span></div>
