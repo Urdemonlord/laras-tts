@@ -8,7 +8,7 @@ name: Rilis Desktop
 #
 # Yang dihasilkan per rilis:
 #   Linux   .deb + AppImage (tauri-cli, dibangun di ubuntu-22.04 untuk glibc 2.35+) + tarball (binary + model + referensi)
-#   macOS   tarball arm64 + x86_64 (.app + model + referensi)
+#   macOS   tarball arm64 + x86_64 (folder Laras berisi .app + model + referensi)
 #   Windows zip (exe + DLL + model + referensi, sama seperti desktop-v0.1.0)
 #
 # Urutan rilis: merge PR ini -> push tag desktop-v0.1.1 -> job ini jalan ->
@@ -97,7 +97,7 @@ jobs:
           ls -lh laras-desktop-linux-x86_64.deb laras-desktop-linux-x86_64.AppImage
 
       - name: Unggah ke rilis
-        if: github.ref_type == 'tag'
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -109,7 +109,7 @@ jobs:
           gh release upload "$TAG" laras-desktop-linux-x86_64.deb laras-desktop-linux-x86_64.AppImage laras-desktop-linux-x86_64.tar.gz --clobber
 
       - name: Simpan artefak (latihan)
-        if: github.ref_type != 'tag'
+        if: github.event_name != 'push' || github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
           name: laras-desktop-linux-paket
@@ -154,25 +154,28 @@ jobs:
           APP="desktop/src-tauri/target/${{ matrix.target }}/release/bundle/macos/Laras.app"
           test -d "$APP"
           rm -rf paket
-          mkdir -p paket/data/models paket/data/ref
-          ditto "$APP" paket/Laras.app
-          bash scripts/unduh-model.sh --dir paket/data/models --ref-dir paket/data/ref
-          mv paket/data/ref/common_voice_id_19961910.mp3 paket/data/ref/suara.mp3
-          ffmpeg -y -v error -i paket/data/ref/suara.mp3 -ar 24000 -ac 1 -c:a pcm_s16le paket/data/ref/suara.wav
-          cat > paket/BACA-DULU.txt <<'EOF'
+          mkdir -p paket/Laras/data/models paket/Laras/data/ref
+          ditto "$APP" paket/Laras/Laras.app
+          bash scripts/unduh-model.sh --dir paket/Laras/data/models --ref-dir paket/Laras/data/ref
+          mv paket/Laras/data/ref/common_voice_id_19961910.mp3 paket/Laras/data/ref/suara.mp3
+          ffmpeg -y -v error -i paket/Laras/data/ref/suara.mp3 -ar 24000 -ac 1 -c:a pcm_s16le paket/Laras/data/ref/suara.wav
+          cat > paket/Laras/BACA-DULU.txt <<'EOF'
           Laras — aplikasi desktop TTS Bahasa Indonesia
           =============================================
 
           Cara pakai:
-            1. Ekstrak SEMUA isi tarball ini ke satu folder (jangan pisahkan).
-            2. Buka Laras.app (dobel-klik).
+            1. Ekstrak tarball ini, hasilnya satu folder Laras.
+            2. Pindahkan SELURUH folder Laras ke Applications (jangan
+               cuma Laras.app-nya: data model ikut di dalam folder itu).
+            3. Buka Laras.app di dalam folder Laras.
 
           Aplikasi ini tidak ditandatangani (tanpa sertifikat Apple),
-          jadi macOS memblokir dobel-klik pertama. Klik kanan Laras.app
-          lalu pilih Open, kemudian Open lagi di dialog yang muncul.
-          Setelah itu dobel-klik biasa sudah bisa.
+          jadi macOS memblokir dobel-klik pertama. Di macOS Sequoia
+          ke atas, buka aplikasinya sekali (akan ditolak), lalu ke
+          System Settings, Privacy & Security, Open Anyway. Di macOS
+          lama, klik kanan Laras.app lalu pilih Open.
 
-          Isi folder harus seperti ini:
+          Isi folder Laras harus seperti ini:
             Laras.app
             data/models/   (9 berkas model ONNX)
             data/ref/suara.wav
@@ -183,11 +186,11 @@ jobs:
               Ganti lewat menu di aplikasi kalau mau suara lain.
             - Semua proses berjalan di CPU, tanpa jaringan.
           EOF
-          tar czf "laras-desktop-macos-${{ matrix.nama }}.tar.gz" -C paket Laras.app data BACA-DULU.txt
+          tar czf "laras-desktop-macos-${{ matrix.nama }}.tar.gz" -C paket Laras
           ls -lh "laras-desktop-macos-${{ matrix.nama }}.tar.gz"
 
       - name: Unggah ke rilis
-        if: github.ref_type == 'tag'
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -199,7 +202,7 @@ jobs:
           gh release upload "$TAG" "laras-desktop-macos-${{ matrix.nama }}.tar.gz" --clobber
 
       - name: Simpan artefak (latihan)
-        if: github.ref_type != 'tag'
+        if: github.event_name != 'push' || github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
           name: laras-desktop-macos-${{ matrix.nama }}-paket
@@ -280,7 +283,7 @@ jobs:
         run: Compress-Archive -Path out\* -DestinationPath laras-desktop-windows-x86_64.zip
 
       - name: Unggah ke rilis
-        if: github.ref_type == 'tag'
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -293,7 +296,7 @@ jobs:
           gh release upload "$TAG" laras-desktop-windows-x86_64.zip --clobber
 
       - name: Simpan artefak (latihan)
-        if: github.ref_type != 'tag'
+        if: github.event_name != 'push' || github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
           name: laras-desktop-windows-paket
