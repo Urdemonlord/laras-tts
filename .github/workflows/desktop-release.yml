@@ -7,7 +7,7 @@ name: Rilis Desktop
 # rilis tidak disentuh.
 #
 # Yang dihasilkan per rilis:
-#   Linux   .deb + AppImage (tauri-cli) + tarball (binary + model + referensi)
+#   Linux   .deb + AppImage (tauri-cli, dibangun di ubuntu-22.04 untuk glibc 2.35+) + tarball (binary + model + referensi)
 #   macOS   tarball arm64 + x86_64 (.app + model + referensi)
 #   Windows zip (exe + DLL + model + referensi, sama seperti desktop-v0.1.0)
 #
@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   linux:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -63,6 +63,7 @@ jobs:
           cp desktop/src-tauri/target/release/laras-desktop paket/
           bash scripts/unduh-model.sh --dir paket/data/models --ref-dir paket/data/ref
           mv paket/data/ref/common_voice_id_19961910.mp3 paket/data/ref/suara.mp3
+          ffmpeg -y -v error -i paket/data/ref/suara.mp3 -ar 24000 -ac 1 -c:a pcm_s16le paket/data/ref/suara.wav
           cat > paket/BACA-DULU.txt <<'EOF'
           Laras — aplikasi desktop TTS Bahasa Indonesia
           =============================================
@@ -74,6 +75,7 @@ jobs:
           Isi folder harus seperti ini:
             laras-desktop
             data/models/   (9 berkas model ONNX)
+            data/ref/suara.wav
             data/ref/suara.mp3
 
           Catatan:
@@ -102,7 +104,7 @@ jobs:
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           gh release create "$TAG" --title "Laras Desktop ${TAG#desktop-v}" \
-            --notes "Paket desktop Laras: Linux (.deb, AppImage, tarball), macOS (tarball arm64 + x86_64), Windows (zip). Semua sudah termasuk model + satu contoh suara referensi CC0." \
+            --notes "Paket desktop Laras: Linux (.deb, AppImage, tarball), macOS (tarball arm64 + x86_64), Windows (zip). Tarball dan zip sudah termasuk model + satu contoh suara referensi CC0 dan langsung jalan. Paket .deb dan AppImage hanya berisi aplikasi; model diunduh sekali secara terpisah." \
             2>/dev/null || true
           gh release upload "$TAG" laras-desktop-linux-x86_64.deb laras-desktop-linux-x86_64.AppImage laras-desktop-linux-x86_64.tar.gz --clobber
 
@@ -144,7 +146,7 @@ jobs:
 
       - name: Bangun aplikasi (.app)
         working-directory: desktop/src-tauri
-        run: cargo tauri build --target ${{ matrix.target }}
+        run: cargo tauri build --target ${{ matrix.target }} --bundles app
 
       - name: Rakit tarball (.app + model + referensi)
         run: |
@@ -156,6 +158,7 @@ jobs:
           ditto "$APP" paket/Laras.app
           bash scripts/unduh-model.sh --dir paket/data/models --ref-dir paket/data/ref
           mv paket/data/ref/common_voice_id_19961910.mp3 paket/data/ref/suara.mp3
+          ffmpeg -y -v error -i paket/data/ref/suara.mp3 -ar 24000 -ac 1 -c:a pcm_s16le paket/data/ref/suara.wav
           cat > paket/BACA-DULU.txt <<'EOF'
           Laras — aplikasi desktop TTS Bahasa Indonesia
           =============================================
@@ -172,6 +175,7 @@ jobs:
           Isi folder harus seperti ini:
             Laras.app
             data/models/   (9 berkas model ONNX)
+            data/ref/suara.wav
             data/ref/suara.mp3
 
           Catatan:
@@ -190,7 +194,7 @@ jobs:
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           gh release create "$TAG" --title "Laras Desktop ${TAG#desktop-v}" \
-            --notes "Paket desktop Laras: Linux (.deb, AppImage, tarball), macOS (tarball arm64 + x86_64), Windows (zip). Semua sudah termasuk model + satu contoh suara referensi CC0." \
+            --notes "Paket desktop Laras: Linux (.deb, AppImage, tarball), macOS (tarball arm64 + x86_64), Windows (zip). Tarball dan zip sudah termasuk model + satu contoh suara referensi CC0 dan langsung jalan. Paket .deb dan AppImage hanya berisi aplikasi; model diunduh sekali secara terpisah." \
             2>/dev/null || true
           gh release upload "$TAG" "laras-desktop-macos-${{ matrix.nama }}.tar.gz" --clobber
 
@@ -244,6 +248,7 @@ jobs:
         run: |
           bash scripts/unduh-model.sh --dir out/data/models --ref-dir out/data/ref
           mv out/data/ref/common_voice_id_19961910.mp3 out/data/ref/suara.mp3
+          ffmpeg -y -v error -i out/data/ref/suara.mp3 -ar 24000 -ac 1 -c:a pcm_s16le out/data/ref/suara.wav
 
       - name: Tulis petunjuk pakai
         shell: bash
@@ -260,6 +265,7 @@ jobs:
             laras-desktop.exe
             DirectML.dll
             data/models/   (9 berkas model ONNX)
+            data/ref/suara.wav
             data/ref/suara.mp3
 
           Catatan:
@@ -277,11 +283,12 @@ jobs:
         if: github.ref_type == 'tag'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
           gh release create "$TAG" --title "Laras Desktop ${TAG#desktop-v}" \
-            --notes "Paket desktop Laras: Linux (.deb, AppImage, tarball), macOS (tarball arm64 + x86_64), Windows (zip). Semua sudah termasuk model + satu contoh suara referensi CC0." \
+            --notes "Paket desktop Laras: Linux (.deb, AppImage, tarball), macOS (tarball arm64 + x86_64), Windows (zip). Tarball dan zip sudah termasuk model + satu contoh suara referensi CC0 dan langsung jalan. Paket .deb dan AppImage hanya berisi aplikasi; model diunduh sekali secara terpisah." \
             2>/dev/null || true
           gh release upload "$TAG" laras-desktop-windows-x86_64.zip --clobber
 

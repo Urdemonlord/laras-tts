@@ -119,6 +119,7 @@ jobs:
         run: |
           bash scripts/unduh-model.sh --dir out/data/models --ref-dir out/data/ref
           mv out/data/ref/common_voice_id_19961910.mp3 out/data/ref/suara.mp3
+          ffmpeg -y -v error -i out/data/ref/suara.mp3 -ar 24000 -ac 1 -c:a pcm_s16le out/data/ref/suara.wav
 
       - name: Tulis petunjuk pakai
         shell: bash
@@ -135,6 +136,7 @@ jobs:
             laras-desktop.exe
             DirectML.dll
             data/models/   (9 berkas model ONNX)
+            data/ref/suara.wav
             data/ref/suara.mp3
 
           Catatan:

@@ -53,18 +53,19 @@ impl Inti {
 /// `data/` di samping binary/bundle, lalu folder repo (memudahkan
 /// `cargo run` saat mengembangkan).
 ///
-/// Kandidat dari lokasi binary: paket (zip/tarball/.deb/.app) menaruh
-/// `data/` di samping binary atau di samping bundle `.app`. Naik sampai
+/// Folder `data/` di samping binary/bundle: hanya paket arsip mandiri
+/// (zip/tarball) yang menaruh `data/` di sana. `.deb` dan AppImage tidak
+/// membawa `data/`, jadi kandidat ini tidak kena di sana. Naik sampai
 /// tiga tingkat supaya `.app/Contents/MacOS/laras-desktop` menemukan
 /// `data/` di samping `Laras.app`.
-fn calon_dari_exe(rel: &str) -> Vec<PathBuf> {
+fn data_di_samping_exe() -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut d = std::env::current_exe()
         .ok()
         .and_then(|e| e.parent().map(PathBuf::from));
     for _ in 0..4 {
         let Some(p) = d else { break };
-        out.push(p.join("data").join(rel));
+        out.push(p.join("data"));
         d = p.parent().map(PathBuf::from);
     }
     out
@@ -78,7 +79,9 @@ fn cari_models() -> PathBuf {
     if let Some(d) = dirs_data() {
         calon.push(d.join("models"));
     }
-    calon.extend(calon_dari_exe("models"));
+    for d in data_di_samping_exe() {
+        calon.push(d.join("models"));
+    }
     if let Ok(d) = std::env::current_dir() {
         calon.push(d.join("data/models"));
         calon.push(d.join("../data/models"));
@@ -90,18 +93,27 @@ fn cari_models() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("data/models"))
 }
 
+/// Referensi suara: WAV lebih dulu daripada MP3 di tiap lokasi, karena
+/// WAV dibaca langsung tanpa ffmpeg (lihat `laras::onnx::wav`).
 fn cari_referensi() -> PathBuf {
     let mut calon: Vec<PathBuf> = Vec::new();
     if let Ok(v) = std::env::var("REF_WAV") {
         calon.push(PathBuf::from(v));
     }
+    let mut basis: Vec<PathBuf> = Vec::new();
     if let Some(d) = dirs_data() {
-        calon.push(d.join("ref/suara.mp3"));
+        basis.push(d.join("ref"));
     }
-    calon.extend(calon_dari_exe("ref/suara.mp3"));
+    for d in data_di_samping_exe() {
+        basis.push(d.join("ref"));
+    }
     if let Ok(d) = std::env::current_dir() {
-        calon.push(d.join("data/ref/suara.mp3"));
-        calon.push(d.join("../data/ref/suara.mp3"));
+        basis.push(d.join("data/ref"));
+        basis.push(d.join("../data/ref"));
+    }
+    for b in basis {
+        calon.push(b.join("suara.wav"));
+        calon.push(b.join("suara.mp3"));
     }
     calon
         .iter()
