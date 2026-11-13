@@ -156,6 +156,11 @@ jobs:
 
       - name: Bangun aplikasi (.app)
         working-directory: desktop/src-tauri
+        env:
+          # Target eksplisit aarch64-apple-darwin membuat rustc memakai
+          # deployment target 11.0, padahal objek CoreML dari prebuilt
+          # ONNX Runtime (dibangun untuk 13.4) butuh ___isPlatformVersionAtLeast.
+          MACOSX_DEPLOYMENT_TARGET: '13.4'
         run: cargo tauri build --target ${{ matrix.target }} --bundles app
 
       - name: Rakit tarball (.app + BACA-DULU)

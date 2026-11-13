@@ -1,5 +1,8 @@
 {
   "bundle": {
-    "resources": ["data/models", "data/ref"]
+    "resources": ["data/models", "data/ref"],
+    "macOS": {
+      "minimumSystemVersion": "13.4"
+    }
   }
 }
