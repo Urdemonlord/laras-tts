@@ -62,7 +62,7 @@ cargo install tauri-cli --version "^2" --locked
 cd desktop/src-tauri && cargo tauri build
 ```
 
-Rilis resmi dibuat otomatis oleh `.github/workflows/desktop-release.yml` saat tag `desktop-v*` di-push: Linux (.deb, AppImage, tarball), macOS (tarball arm64 + x86_64), Windows (zip).
+Rilis resmi dibuat otomatis oleh `.github/workflows/desktop-release.yml` saat tag `desktop-v*` di-push: Linux (.deb, AppImage, tarball), macOS (tarball arm64), Windows (zip).
 
 ## Model dan referensi suara
 
