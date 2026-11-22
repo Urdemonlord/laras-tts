@@ -83,6 +83,8 @@ pub fn terbilang(n: u64) -> String {
                 parts.push("seribu".to_string());
             } else if nama.is_empty() {
                 parts.push(ratus(q));
+            } else if q >= 1000 {
+                parts.push(format!("{} {}", terbilang(q), nama));
             } else {
                 parts.push(format!("{} {}", ratus(q), nama));
             }
@@ -134,7 +136,7 @@ fn angka(tok: &str) -> String {
     } else {
         tok.to_string()
     };
-    if clean.parse::<u64>().is_err() {
+    if clean.parse::<u64>().is_err() || (!tok.contains('.') && tok.len() > 15) {
         // bukan bilangan utuh (mis. "09.30", "4.2.1") -> baca digit per digit
         let mut out: Vec<String> = Vec::new();
         for c in tok.chars() {
@@ -200,6 +202,11 @@ mod tests {
         assert_eq!(terbilang(12500), "dua belas ribu lima ratus");
         assert_eq!(terbilang(2026), "dua ribu dua puluh enam");
         assert_eq!(terbilang(1_250_000), "satu juta dua ratus lima puluh ribu");
+        assert_eq!(terbilang(1_000_000_000_000_000), "seribu triliun");
+        assert_eq!(
+            terbilang(2_500_000_000_000_000),
+            "dua ribu lima ratus triliun"
+        );
     }
 
     #[test]
@@ -224,6 +231,14 @@ mod tests {
             "pukul nol sembilan titik tiga nol"
         );
         assert_eq!(normalize("versi 4.2.1"), "versi empat titik dua titik satu");
+        assert_eq!(
+            normalize("NIK 3201234567890123"),
+            "NIK tiga dua nol satu dua tiga empat lima enam tujuh delapan sembilan nol satu dua tiga"
+        );
+        assert_eq!(
+            normalize("Rp 1.000.000.000.000.000"),
+            "seribu triliun rupiah"
+        );
     }
 
     #[test]
