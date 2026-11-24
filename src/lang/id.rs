@@ -119,12 +119,29 @@ fn re_spasi() -> &'static Regex {
 }
 
 /// "12.500" -> "dua belas ribu lima ratus", "32,5" -> "tiga puluh dua koma lima"
+fn eja(tok: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    for c in tok.chars() {
+        match c {
+            '0'..='9' => out.push(terbilang(c.to_digit(10).unwrap() as u64)),
+            '.' => out.push("titik".to_string()),
+            ',' => out.push("koma".to_string()),
+            _ => {}
+        }
+    }
+    out.join(" ")
+}
+
 fn angka(tok: &str) -> String {
     let tok = tok.trim().trim_end_matches('.');
     if let Some((bulat, pecah)) = tok.split_once(',') {
         let b: String = bulat.replace('.', "");
         let b = if b.is_empty() { "0".to_string() } else { b };
-        let mut out = format!("{} koma", terbilang(b.parse().unwrap_or(0)));
+        let depan = match b.parse::<u64>() {
+            Ok(n) if bulat.contains('.') || b.len() <= 15 => terbilang(n),
+            _ => eja(&b),
+        };
+        let mut out = format!("{depan} koma");
         for c in pecah.chars().filter(|c| c.is_ascii_digit()) {
             out.push(' ');
             out.push_str(&terbilang(c.to_digit(10).unwrap() as u64));
@@ -137,17 +154,9 @@ fn angka(tok: &str) -> String {
         tok.to_string()
     };
     if clean.parse::<u64>().is_err() || (!tok.contains('.') && tok.len() > 15) {
-        // bukan bilangan utuh (mis. "09.30", "4.2.1") -> baca digit per digit
-        let mut out: Vec<String> = Vec::new();
-        for c in tok.chars() {
-            match c {
-                '0'..='9' => out.push(terbilang(c.to_digit(10).unwrap() as u64)),
-                '.' => out.push("titik".to_string()),
-                ',' => out.push("koma".to_string()),
-                _ => {}
-            }
-        }
-        return out.join(" ");
+        // bukan bilangan utuh (mis. "09.30", "4.2.1") atau deretan digit lebih dari
+        // 15 tanpa pemisah ribuan (mis. NIK) -> baca digit per digit
+        return eja(tok);
     }
     terbilang(clean.parse().unwrap_or(0))
 }
@@ -238,6 +247,18 @@ mod tests {
         assert_eq!(
             normalize("Rp 1.000.000.000.000.000"),
             "seribu triliun rupiah"
+        );
+        assert_eq!(
+            normalize("3201234567890123,5"),
+            "tiga dua nol satu dua tiga empat lima enam tujuh delapan sembilan nol satu dua tiga koma lima"
+        );
+        assert_eq!(
+            normalize("12345678901234567890,5"),
+            "satu dua tiga empat lima enam tujuh delapan sembilan nol satu dua tiga empat lima enam tujuh delapan sembilan nol koma lima"
+        );
+        assert_eq!(
+            normalize("1.000.000.000.000.000,5"),
+            "seribu triliun koma lima"
         );
     }
 
