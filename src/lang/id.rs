@@ -118,7 +118,7 @@ fn re_spasi() -> &'static Regex {
     R.get_or_init(|| Regex::new(r"\s+").unwrap())
 }
 
-/// "12.500" -> "dua belas ribu lima ratus", "32,5" -> "tiga puluh dua koma lima"
+/// "4.2.1" -> "empat titik dua titik satu": baca digit per digit
 fn eja(tok: &str) -> String {
     let mut out: Vec<String> = Vec::new();
     for c in tok.chars() {
@@ -132,6 +132,7 @@ fn eja(tok: &str) -> String {
     out.join(" ")
 }
 
+/// "12.500" -> "dua belas ribu lima ratus", "32,5" -> "tiga puluh dua koma lima"
 fn angka(tok: &str) -> String {
     let tok = tok.trim().trim_end_matches('.');
     if let Some((bulat, pecah)) = tok.split_once(',') {
